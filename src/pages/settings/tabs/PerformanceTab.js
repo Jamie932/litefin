@@ -69,162 +69,102 @@ export class PerformanceTab {
                 <p class="content-subtitle" data-i18n="PerformanceTabDescription">${i18n.t('PerformanceTabDescription') || 'Optimize memory usage, scrolling animations, cache policies, and rendering speed.'}</p>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelReloadOnResume">${i18n.t('LabelReloadOnResume') || 'Reload Page on Resume'}</span>
-                        <span class="setting-description" data-i18n="ReloadOnResumeDescription">${i18n.t('ReloadOnResumeDescription') || 'Automatically reload the active view when returning from background or waking from sleep.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelReloadOnResume">${i18n.t('LabelReloadOnResume') || 'Reload Page on Resume'}</span><span class="setting-description" data-i18n="ReloadOnResumeDescription">${i18n.t('ReloadOnResumeDescription') || 'Automatically reload the active view when returning from background or waking from sleep.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${reloadOnResumeEnabled ? 'active' : ''}" id="toggle-reload-on-resume" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelUseBatchLatestPlugin">${i18n.t('LabelUseBatchLatestPlugin') || 'Use Plugin for Home Libraries'}</span>
-                        <span class="setting-description" data-i18n="UseBatchLatestPluginDescription">${i18n.t('UseBatchLatestPluginDescription') || 'Fetch all home screen library rows in a single batched HTTP request via the Litefin plugin.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelUseBatchLatestPlugin">${i18n.t('LabelUseBatchLatestPlugin') || 'Use Plugin for Home Libraries'}</span><span class="setting-description" data-i18n="UseBatchLatestPluginDescription">${i18n.t('UseBatchLatestPluginDescription') || 'Fetch all home screen library rows in a single batched HTTP request via the Litefin plugin.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:useBatchLatestPlugin') !== 'false' ? 'active' : ''}" id="toggle-use-batch-latest-plugin" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="UseItemsForSearch">${i18n.t('UseItemsForSearch') || 'Use Items API for Search'}</span>
-                        <span class="setting-description" data-i18n="UseItemsForSearchDescription">${i18n.t('UseItemsForSearchDescription') || 'Query the /Items API instead of /Search/Hints for global search.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="UseItemsForSearch">${i18n.t('UseItemsForSearch') || 'Use Items API for Search'}</span><span class="setting-description" data-i18n="UseItemsForSearchDescription">${i18n.t('UseItemsForSearchDescription') || 'Query the /Items API instead of /Search/Hints for global search.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:useItemsForSearch') === 'true' ? 'active' : ''}" id="toggle-use-items-for-search" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="VerticalScrollMode">${i18n.t('VerticalScrollMode') || 'Vertical Scroll Animation'}</span>
-                        <span class="setting-description" data-i18n="VerticalScrollModeDescription">${i18n.t('VerticalScrollModeDescription') || 'Choose how vertical page scrolling is animated.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="VerticalScrollMode">${i18n.t('VerticalScrollMode') || 'Vertical Scroll Animation'}</span><span class="setting-description" data-i18n="VerticalScrollModeDescription">${i18n.t('VerticalScrollModeDescription') || 'Choose how vertical page scrolling is animated.'}</span></div>
                     <div class="setting-control">${this._renderDropdown('vertical-scroll-mode-select', [{ value: 'current', label: i18n.t('ScrollModeCurrent') || 'Normal (Current)' }, { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' }, { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' }, { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }], vertScrollMode)}</div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="HorizontalScrollMode">${i18n.t('HorizontalScrollMode') || 'Horizontal Scroll Animation'}</span>
-                        <span class="setting-description" data-i18n="HorizontalScrollModeDescription">${i18n.t('HorizontalScrollModeDescription') || 'Choose how horizontal media row scrolling is animated.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="HorizontalScrollMode">${i18n.t('HorizontalScrollMode') || 'Horizontal Scroll Animation'}</span><span class="setting-description" data-i18n="HorizontalScrollModeDescription">${i18n.t('HorizontalScrollModeDescription') || 'Choose how horizontal media row scrolling is animated.'}</span></div>
                     <div class="setting-control">${this._renderDropdown('horizontal-scroll-mode-select', [{ value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' }, { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' }, { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }], horizScrollMode)}</div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="ScrollSmoothingDuration">${i18n.t('ScrollSmoothingDuration') || 'Scroll Smoothing (Duration)'}</span>
-                        <span class="setting-description" data-i18n="ScrollSmoothingDurationDescription">${i18n.t('ScrollSmoothingDurationDescription') || 'Configure animation duration and speed for vertical row navigation.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="ScrollSmoothingDuration">${i18n.t('ScrollSmoothingDuration') || 'Scroll Smoothing (Duration)'}</span><span class="setting-description" data-i18n="ScrollSmoothingDurationDescription">${i18n.t('ScrollSmoothingDurationDescription') || 'Configure animation duration and speed for vertical row navigation.'}</span></div>
                     <div class="setting-control">${this._renderDropdown('scroll-smoothing-duration-select', [{ value: 'instant', label: i18n.t('ScrollDurationInstant') || 'Instant (No Animation)' }, { value: 'current', label: i18n.t('ScrollDurationCurrent') || 'Fast (Default)' }, { value: 'smooth', label: i18n.t('ScrollDurationSmooth') || 'Smooth' }, { value: 'slower', label: i18n.t('ScrollDurationSlower') || 'Slower (Ultra Smooth)' }], scrollSmoothing)}</div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="VerticalScrollAlignment">${i18n.t('VerticalScrollAlignment') || 'Scroll Focus Alignment'}</span>
-                        <span class="setting-description" data-i18n="VerticalScrollAlignmentDescription">${i18n.t('VerticalScrollAlignmentDescription') || 'Choose where focused rows align on screen.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="VerticalScrollAlignment">${i18n.t('VerticalScrollAlignment') || 'Scroll Focus Alignment'}</span><span class="setting-description" data-i18n="VerticalScrollAlignmentDescription">${i18n.t('VerticalScrollAlignmentDescription') || 'Choose where focused rows align on screen.'}</span></div>
                     <div class="setting-control">${this._renderDropdown('vertical-scroll-alignment-select', [{ value: 'bottom', label: i18n.t('ScrollAlignmentBottom') || 'Bottom (Default - Minimal Scrolling)' }, { value: 'middle', label: i18n.t('ScrollAlignmentMiddle') || 'Middle (Centered)' }, { value: 'top', label: i18n.t('ScrollAlignmentTop') || 'Top (Classic Litefin)' }], scrollAlignment)}</div>
                 </div>
                 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelLibraryPageSize">${i18n.t('LabelLibraryPageSize') || 'Items per page (Library)'}</span>
-                        <span class="setting-description" data-i18n="LibraryPageSizeDescription">${i18n.t('LibraryPageSizeDescription') || 'Choose how many items to load at once in the grid view.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelLibraryPageSize">${i18n.t('LabelLibraryPageSize') || 'Items per page (Library)'}</span><span class="setting-description" data-i18n="LibraryPageSizeDescription">${i18n.t('LibraryPageSizeDescription') || 'Choose how many items to load at once in the grid view.'}</span></div>
                     <div class="setting-control">${this._renderDropdown('library-page-size-select', [{ value: 25, label: '25' }, { value: 50, label: '50 (Default)' }, { value: 75, label: '75' }, { value: 100, label: '100' }, { value: 150, label: '150' }, { value: 'unlimited', label: i18n.t('OptionUnlimited') || 'Unlimited (Infinite Scroll)' }], libraryPageSize)}</div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelPlayQueueEpisodeLimit">${i18n.t('LabelPlayQueueEpisodeLimit') || 'Episode Queue Window Size'}</span>
-                        <span class="setting-description" data-i18n="PlayQueueEpisodeLimitDescription">${i18n.t('PlayQueueEpisodeLimitDescription') || 'Number of episodes to load into queue around active item.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelPlayQueueEpisodeLimit">${i18n.t('LabelPlayQueueEpisodeLimit') || 'Episode Queue Window Size'}</span><span class="setting-description" data-i18n="PlayQueueEpisodeLimitDescription">${i18n.t('PlayQueueEpisodeLimitDescription') || 'Number of episodes to load into queue around active item.'}</span></div>
                     <div class="setting-control">${this._renderDropdown('play-queue-episode-limit-select', [{ value: 25, label: '25' }, { value: 50, label: '50 (Default)' }, { value: 75, label: '75' }, { value: 100, label: '100' }, { value: 150, label: '150' }], queueEpisodeLimit)}</div>
                 </div>
 
                 <div class="setting-item" id="alpha-picker-scroll-mode-item" style="${storage.getItem('pref:libraryPageSize') === 'unlimited' ? '' : 'display: none;'}">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelAlphaPickerScrollMode">${i18n.t('LabelAlphaPickerScrollMode') || 'Alphabet Quick-Jump Action'}</span>
-                        <span class="setting-description" data-i18n="AlphaPickerScrollModeDescription">${i18n.t('AlphaPickerScrollModeDescription') || 'In unlimited mode, scroll directly to letter sections.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelAlphaPickerScrollMode">${i18n.t('LabelAlphaPickerScrollMode') || 'Alphabet Quick-Jump Action'}</span><span class="setting-description" data-i18n="AlphaPickerScrollModeDescription">${i18n.t('AlphaPickerScrollModeDescription') || 'In unlimited mode, scroll directly to letter sections.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:alphaPickerScrollMode') !== 'false' ? 'active' : ''}" id="toggle-alpha-picker-scroll-mode" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelOnlyBlurHashBackdrop">${i18n.t('LabelOnlyBlurHashBackdrop') || 'Only Use BlurHash for Details Backdrop'}</span>
-                        <span class="setting-description" data-i18n="OnlyBlurHashBackdropDescription">${i18n.t('OnlyBlurHashBackdropDescription') || 'Use lightweight blurhash instead of heavy background image.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelOnlyBlurHashBackdrop">${i18n.t('LabelOnlyBlurHashBackdrop') || 'Only Use BlurHash for Details Backdrop'}</span><span class="setting-description" data-i18n="OnlyBlurHashBackdropDescription">${i18n.t('OnlyBlurHashBackdropDescription') || 'Use lightweight blurhash instead of heavy background image.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${layoutManager.getOnlyBlurHashBackdrop() ? 'active' : ''}" id="toggle-only-blurhash-backdrop" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelLightMusicPlayer">${i18n.t('LabelLightMusicPlayer') || 'Light Music Player'}</span>
-                        <span class="setting-description" data-i18n="LightMusicPlayerDescription">${i18n.t('LightMusicPlayerDescription') || 'Removes background blur from music player on older TVs.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelLightMusicPlayer">${i18n.t('LabelLightMusicPlayer') || 'Light Music Player'}</span><span class="setting-description" data-i18n="LightMusicPlayerDescription">${i18n.t('LightMusicPlayerDescription') || 'Removes background blur from music player on older TVs.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${layoutManager.getLightMusicPlayer() ? 'active' : ''}" id="toggle-light-music-player" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelLowVramMode">${i18n.t('LabelLowVramMode') || 'Low VRAM Mode'}</span>
-                        <span class="setting-description" data-i18n="LowVramModeDescription">${i18n.t('LowVramModeDescription') || 'Disable GPU animations on older hardware.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelLowVramMode">${i18n.t('LabelLowVramMode') || 'Low VRAM Mode'}</span><span class="setting-description" data-i18n="LowVramModeDescription">${i18n.t('LowVramModeDescription') || 'Disable GPU animations on older hardware.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${layoutManager.getLowVramMode() ? 'active' : ''}" id="toggle-low-vram-mode" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableCardScaling">${i18n.t('LabelDisableCardScaling') || 'Disable Card Scaling'}</span>
-                        <span class="setting-description" data-i18n="DisableCardScalingDescription">${i18n.t('DisableCardScalingDescription') || 'Stop movie posters from scaling up when focused.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelDisableCardScaling">${i18n.t('LabelDisableCardScaling') || 'Disable Card Scaling'}</span><span class="setting-description" data-i18n="DisableCardScalingDescription">${i18n.t('DisableCardScalingDescription') || 'Stop movie posters from scaling up when focused.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${layoutManager.getDisableCardScaling() ? 'active' : ''}" id="toggle-disable-card-scaling" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="ReduceMotionLargeScrolls">${i18n.t('ReduceMotionLargeScrolls') || 'Reduce Motion (Large Scrolls)'}</span>
-                        <span class="setting-description" data-i18n="ReduceMotionLargeScrollsDescription">${i18n.t('ReduceMotionLargeScrollsDescription') || 'Instantly snap to target on large scroll operations.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="ReduceMotionLargeScrolls">${i18n.t('ReduceMotionLargeScrolls') || 'Reduce Motion (Large Scrolls)'}</span><span class="setting-description" data-i18n="ReduceMotionLargeScrollsDescription">${i18n.t('ReduceMotionLargeScrollsDescription') || 'Instantly snap to target on large scroll operations.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:snapLargeScrolls') === 'true' ? 'active' : ''}" id="toggle-snap-large-scrolls" tabindex="0"></button></div>
                 </div>           
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableBlurHash">${i18n.t('LabelDisableBlurHash') || 'Disable BlurHash'}</span>
-                        <span class="setting-description" data-i18n="DisableBlurHashDescription">${i18n.t('DisableBlurHashDescription') || 'Stop showing color-accurate blurred backgrounds while images are loading.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelDisableBlurHash">${i18n.t('LabelDisableBlurHash') || 'Disable BlurHash'}</span><span class="setting-description" data-i18n="DisableBlurHashDescription">${i18n.t('DisableBlurHashDescription') || 'Stop showing color-accurate blurred backgrounds while images are loading.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${layoutManager.getDisableBlurhash() ? 'active' : ''}" id="toggle-disable-blurhash" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableLibraryBlurHash">${i18n.t('LabelDisableLibraryBlurHash') || 'Disable BlurHash in Library'}</span>
-                        <span class="setting-description" data-i18n="DisableLibraryBlurHashDescription">${i18n.t('DisableLibraryBlurHashDescription') || 'Stop decoding BlurHash canvases in library grids to maximize navigation speed.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelDisableLibraryBlurHash">${i18n.t('LabelDisableLibraryBlurHash') || 'Disable BlurHash in Library'}</span><span class="setting-description" data-i18n="DisableLibraryBlurHashDescription">${i18n.t('DisableLibraryBlurHashDescription') || 'Stop decoding BlurHash canvases in library grids to maximize navigation speed.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${layoutManager.getDisableLibraryBlurhash() ? 'active' : ''}" id="toggle-disable-library-blurhash" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableFocusRestore">${i18n.t('LabelDisableFocusRestore') || 'Disable Focus Restoration'}</span>
-                        <span class="setting-description" data-i18n="DisableFocusRestoreDescription">${i18n.t('DisableFocusRestoreDescription') || 'Skip saving and restoring last focused item between pages.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelDisableFocusRestore">${i18n.t('LabelDisableFocusRestore') || 'Disable Focus Restoration'}</span><span class="setting-description" data-i18n="DisableFocusRestoreDescription">${i18n.t('DisableFocusRestoreDescription') || 'Skip saving and restoring last focused item between pages.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:disableFocusRestore') === 'true' ? 'active' : ''}" id="toggle-disable-focus-restore" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="HomeScreenCache">${i18n.t('HomeScreenCache') || 'Disable Home Screen Caching'}</span>
-                        <span class="setting-description" data-i18n="HomeScreenCacheDescription">${i18n.t('HomeScreenCacheDescription') || 'Skip caching home screen data between page visits.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="HomeScreenCache">${i18n.t('HomeScreenCache') || 'Disable Home Screen Caching'}</span><span class="setting-description" data-i18n="HomeScreenCacheDescription">${i18n.t('HomeScreenCacheDescription') || 'Skip caching home screen data between page visits.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:homeScreenCache') === 'false' ? 'active' : ''}" id="toggle-home-screen-cache" tabindex="0"></button></div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableLibraryCache">${i18n.t('LabelDisableLibraryCache') || 'Disable Library Cache'}</span>
-                        <span class="setting-description" data-i18n="DisableLibraryCacheDescription">${i18n.t('DisableLibraryCacheDescription') || 'Skip caching library content between page visits.'}</span>
-                    </div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="LabelDisableLibraryCache">${i18n.t('LabelDisableLibraryCache') || 'Disable Library Cache'}</span><span class="setting-description" data-i18n="LabelDisableLibraryCacheDescription">${i18n.t('LabelDisableLibraryCacheDescription') || 'Skip caching library content between page visits.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:disableLibraryCache') === 'true' ? 'active' : ''}" id="toggle-disable-library-cache" tabindex="0"></button></div>
                 </div>
             </div>

@@ -12,7 +12,7 @@ import { storage } from '../../../utils/StorageService.js';
 import { versionChecker } from '../../../utils/VersionChecker.js';
 import { i18n } from '../../../utils/i18n.js';
 import { logger } from '../../../utils/Logger.js';
-import { AboutModals, openExternalUrl, getDeviceSpecsData } from './AboutModals.js';
+import { AboutModals, openExternalUrl, getDeviceSpecsData } from '../modals/AboutModals.js';
 
 const log = logger.create('AboutTab');
 

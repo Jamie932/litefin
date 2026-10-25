@@ -13,7 +13,7 @@ import { pluginManager } from '../../../plugins/PluginManager.js';
 import { focusManager } from '../../../ui/FocusManager.js';
 import { i18n } from '../../../utils/i18n.js';
 import { logger } from '../../../utils/Logger.js';
-import { openExternalUrl } from './AboutDeviceSpecs.js';
+import { openExternalUrl } from '../modals/AboutDeviceSpecs.js';
 
 const log = logger.create('PluginsTab');
 

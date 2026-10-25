@@ -33,16 +33,17 @@ import { homeLayoutManager } from '../utils/HomeLayoutManager.js';
 import { sidebarLayoutManager } from '../utils/SidebarLayoutManager.js';
 import { AUDIO_FALLBACK_SLOTS, isAudioFallbackSelect } from '../utils/AudioFallbackConfig.js';
 import { eventBus } from '../core/EventBus.js';
-import { versionChecker } from '../utils/VersionChecker.js';
 import { settingsIcons, setIconStyle, getSupportedStyles } from '../utils/Icons.js';
 import { toast } from '../ui/Toast.js';
-import { pinManager } from '../utils/PinManager.js';
-import { pinDialog } from '../ui/PinDialog.js';
-import { customHeadersDialog } from '../ui/CustomHeadersDialog.js';
-import { seerr } from '../api/seerrClient.js';
 import { escapeHtml } from '../utils/Utils.js';
 import { watchProviderRegion, watchProviderRegionName } from '../utils/WatchProviders.js';
 import CardRenderer from '../utils/CardRenderer.js';
+import { AboutTab } from './settings/tabs/AboutTab.js';
+import { LibrariesTab } from './settings/tabs/LibrariesTab.js';
+import { PluginsTab } from './settings/tabs/PluginsTab.js';
+import { AccountTab } from './settings/tabs/AccountTab.js';
+import { ControlsTab } from './settings/tabs/ControlsTab.js';
+import { PerformanceTab } from './settings/tabs/PerformanceTab.js';
 
 const log = logger.create('SettingsPage');
 
@@ -74,6 +75,14 @@ class SettingsPage extends Page {
         // Bound viewport resize listener for orientation transitions
         this._onResize = null;
         this._fallbackFonts = [];
+
+        // Encapsulated tab controllers (Phase 1 modularization)
+        this.aboutTab = typeof AboutTab !== 'undefined' ? new AboutTab(this) : null;
+        this.librariesTab = typeof LibrariesTab !== 'undefined' ? new LibrariesTab(this) : null;
+        this.pluginsTab = typeof PluginsTab !== 'undefined' ? new PluginsTab(this) : null;
+        this.accountTab = typeof AccountTab !== 'undefined' ? new AccountTab(this) : null;
+        this.controlsTab = typeof ControlsTab !== 'undefined' ? new ControlsTab(this) : null;
+        this.performanceTab = typeof PerformanceTab !== 'undefined' ? new PerformanceTab(this) : null;
     }
 
     async onInit() {
@@ -342,258 +351,29 @@ class SettingsPage extends Page {
 
     /**
      * Render the admin-only Libraries management tab.
-     * Includes a global library scan button and a live list of server libraries
-     * with individual metadata refresh options.
+     * Delegates markup construction to the extracted LibrariesTab component.
      * @returns {string} HTML markup for the tab
      */
     _renderLibrariesTab() {
-        // Enforce admin permission guard directly in template
-        const user = auth.getCurrentUser();
-        if (!user?.Policy?.IsAdministrator) {
-            return `
-                <div class="settings-tab-content">
-                    <h2 class="content-title" data-i18n="AccessDenied">${i18n.t('AccessDenied') || 'Access Denied'}</h2>
-                    <p class="content-subtitle" data-i18n="AdminOnlyFeature">
-                        ${i18n.t('AdminOnlyFeature') || 'This section requires administrator privileges.'}
-                    </p>
-                </div>
-            `;
-        }
-
-        return `
-            <div class="settings-tab-content">
-                <h2 class="content-title" data-i18n="Libraries">${i18n.t('Libraries') || 'Libraries'}</h2>
-                <p class="content-subtitle" data-i18n="LibrariesAdminDescription">
-                    ${i18n.t('LibrariesAdminDescription') || 'Manage server media libraries, trigger global library scans, and refresh metadata.'}
-                </p>
-
-                <div class="libraries-tab-container">
-                    <!-- Global Actions Row (Scan All Libraries) using standard setting-item layout -->
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <span class="setting-name" data-i18n="ScanAllLibraries">${i18n.t('ScanAllLibraries') || 'Scan All Libraries'}</span>
-                            <span class="setting-description" data-i18n="ScanAllLibrariesDescription">
-                                ${i18n.t('ScanAllLibrariesDescription') || 'Trigger a comprehensive scan across all media libraries to discover newly added files.'}
-                            </span>
-                        </div>
-                        <div class="setting-control">
-                            <button class="btn btn-option btn-scan-all-libraries" id="btn-scan-all-libraries" tabindex="0" data-focusable="true">
-                                <svg class="icon-outline btn-icon-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6c0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6c0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4l-4-4v3z"/></svg>
-                                <svg class="icon-filled btn-icon-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6c0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6c0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4l-4-4v3z"/></svg>
-                                <span class="btn-label" data-i18n="ScanAll">${i18n.t('ScanAll') || 'Scan All'}</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Individual Libraries Section Header -->
-                    <div class="library-list-section-header">
-                        <span class="library-list-section-title" data-i18n="MediaLibraries">${i18n.t('MediaLibraries') || 'Media Libraries'}</span>
-                        <span class="library-list-count-badge" id="libraries-count-badge">...</span>
-                    </div>
-
-                    <!-- Dynamic Library Items List Container -->
-                    <div class="library-items-list" id="libraries-admin-list">
-                        <div class="library-admin-loading" data-i18n="LoadingLibraries">
-                            ${i18n.t('LoadingLibraries') || 'Loading libraries...'}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        return this.librariesTab ? this.librariesTab.render() : '';
     }
 
+    /**
+     * Render the live list of plugins and server integrations.
+     * Delegates markup construction to the extracted PluginsTab component.
+     * @returns {string} HTML markup for the tab
+     */
     _renderPluginsTab() {
-        /* Get the live list from the PluginManager.
-           Each entry: { id, name, version, description, serverDependency, enabled, dependencyDeferred } */
-        const plugins = pluginManager.getPluginList();
-
-        // Helper: build a human-readable status badge for a plugin entry
-        const statusBadge = (p) => {
-            if (!p.enabled && !p.dependencyDeferred) {
-                // Disabled either by user choice or missing server plugin
-                return `<span class="plugin-status plugin-status--disabled">${i18n.t('Disabled')}</span>`;
-            }
-            if (p.dependencyDeferred) {
-                // Server dependency hasn't been probed yet (non-admin first boot)
-                return `<span class="plugin-status plugin-status--pending">${i18n.t('PendingVerification', ['Pending'])}</span>`;
-            }
-            return `<span class="plugin-status plugin-status--active">${i18n.t('Active')}</span>`;
-        };
-
-        // Build a toggle row for each plugin
-        const rows = plugins
-            .map(
-                (p) => `
-            <div class="setting-item">
-                <div class="setting-label">
-                    <span class="setting-name">
-                        ${p.name}
-                        <span class="plugin-version">v${p.version}</span>
-                        ${statusBadge(p)}
-                    </span>
-                    ${p.description ? `<span class="setting-description">${p.description}</span>` : ''}
-                    ${
-                        p.serverDependency
-                            ? `<span class="setting-description plugin-dep">
-                               ${i18n.t('RequiresPlugin', ['Requires'])}:
-                               <code>${p.serverDependency}</code>
-                           </span>`
-                            : ''
-                    }
-                </div>
-                <div class="setting-control">
-                    <button class="toggle-switch ${p.enabled ? 'active' : ''}"
-                            data-plugin-id="${p.id}"
-                            id="plugin-toggle-${p.id}"
-                            tabindex="0">
-                    </button>
-                </div>
-            </div>
-        `
-            )
-            .join('');
-
-        // Show a friendly empty state if no plugins are loaded
-        const content =
-            plugins.length > 0
-                ? rows
-                : `<p class="settings-empty-state">${i18n.t('NoPlugins', ['No plugins installed.'])}</p>`;
-
-        return `
-            <div class="settings-tab-content">
-                <!--
-                    ========================================================================
-                    Plugins Tab Header with Quick-Launch Server Dashboard Action
-                    ========================================================================
-                    - Clean visual hierarchy with clear action callout.
-                    - Prominently positions server management at the top of the view.
-                    - Responsive layout gracefully adapts between desktop, tablet, and mobile.
-                    ========================================================================
-                -->
-                <div class="plugins-tab-header">
-                    <div class="plugins-tab-header-info">
-                        <h2 class="content-title" data-i18n="Plugins">${i18n.t('Plugins')}</h2>
-                        <p class="content-subtitle" data-i18n="PluginsTabDescription">
-                            ${i18n.t('PluginsTabDescription') || 'Extend functionality with community add-ons, metadata providers, and third-party integrations.'}
-                        </p>
-                    </div>
-                    <!-- Quick-launch button opening Jellyfin Server Dashboard in a new window -->
-                    <button class="btn btn-option btn-open-dashboard focusable"
-                            id="btn-open-dashboard"
-                            tabindex="0"
-                            data-focusable="true"
-                            title="${i18n.t('OpenJellyfinDashboard') || 'Open Jellyfin Dashboard'}">
-                        <!-- External link glyph indicating navigation to an outside window/tab -->
-                        <svg class="btn-icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                            <polyline points="15 3 21 3 21 9"></polyline>
-                            <line x1="10" y1="14" x2="21" y2="3"></line>
-                        </svg>
-                        <span class="btn-label" data-i18n="OpenJellyfinDashboard">${i18n.t('OpenJellyfinDashboard') || 'Open Jellyfin Dashboard'}</span>
-                    </button>
-                </div>
-
-                <div class="setting-item" id="seerr-status-card">
-                    <div class="setting-label">
-                        <span class="setting-name">
-                            ${i18n.t('LitefinAndSeerrStatusLabel', ['Litefin Plugin & Seerr State'])}
-                            <span id="litefin-plugin-status-badge" class="plugin-status plugin-status--pending">Probing...</span>
-                            <span id="seerr-status-badge" class="plugin-status plugin-status--pending" style="display: none;">Probing...</span>
-                        </span>
-                        <span class="setting-description" id="seerr-status-description">
-                            Probing server companion plugin and Seerr status...
-                        </span>
-                    </div>
-                </div>
-
-                <h3 class="setting-section-title">${i18n.t('InstalledPlugins', ['Installed Plugins'])}</h3>
-                ${content}
-            </div>
-        `;
+        return this.pluginsTab ? this.pluginsTab.render() : '';
     }
 
-    /** Queries the Litefin server companion plugin to reflect Litefin plugin and Seerr integration state in the Plugins tab. */
+    /**
+     * Queries the Litefin companion plugin to update status badges in the Plugins tab.
+     * Preserved as a facade for backward compatibility and dynamic tab switching.
+     */
     async _refreshSeerrStatus() {
-        const litefinBadgeEl = this.$('#litefin-plugin-status-badge');
-        const seerrBadgeEl = this.$('#seerr-status-badge');
-        const descEl = this.$('#seerr-status-description');
-        if (!descEl) return;
-
-        try {
-            // Check whether the Litefin companion server plugin is installed and active on the Jellyfin server
-            const isLitefinAvailable = await api.isLitefinPluginAvailable(true);
-
-            if (!isLitefinAvailable) {
-                if (litefinBadgeEl) {
-                    litefinBadgeEl.className = 'plugin-status plugin-status--disabled';
-                    litefinBadgeEl.textContent = i18n.t('LitefinPluginMissing', ['Litefin Plugin: Missing']);
-                }
-                if (seerrBadgeEl) {
-                    seerrBadgeEl.style.display = 'none';
-                }
-                descEl.textContent = i18n.t('LitefinPluginMissingDesc', [
-                    'Litefin companion plugin is not installed on the Jellyfin server. Seerr integration, batch queries, and server backups are disabled.'
-                ]);
-                return;
-            }
-
-            // Litefin server plugin is installed & active
-            if (litefinBadgeEl) {
-                litefinBadgeEl.className = 'plugin-status plugin-status--active';
-                litefinBadgeEl.textContent = i18n.t('LitefinPluginActive', ['Litefin Plugin: Active']);
-            }
-
-            // Query Seerr configuration & connectivity through the Litefin server plugin
-            const status = await seerr.status(true);
-            if (seerrBadgeEl) {
-                seerrBadgeEl.style.display = '';
-            }
-
-            if (status.configured && status.available) {
-                if (seerrBadgeEl) {
-                    seerrBadgeEl.className = 'plugin-status plugin-status--active';
-                    seerrBadgeEl.textContent = i18n.t('SeerrStatusConnected', ['Seerr: Connected']);
-                }
-                descEl.textContent = i18n.t('SeerrStatusConnectedDesc', [
-                    'Litefin companion plugin is active and successfully connected to Seerr.'
-                ]);
-            } else if (status.configured && !status.available) {
-                if (seerrBadgeEl) {
-                    seerrBadgeEl.className = 'plugin-status plugin-status--disabled';
-                    seerrBadgeEl.textContent = i18n.t('SeerrStatusUnreachable', ['Seerr: Unreachable']);
-                }
-                descEl.textContent = i18n.t('SeerrStatusUnreachableDesc', [
-                    'Litefin plugin is installed, but the Jellyfin server cannot reach the configured Seerr instance.'
-                ]);
-            } else if (!status.configured && status.available) {
-                if (seerrBadgeEl) {
-                    seerrBadgeEl.className = 'plugin-status plugin-status--pending';
-                    seerrBadgeEl.textContent = i18n.t('SeerrStatusNotConfigured', ['Seerr: Not Configured']);
-                }
-                descEl.textContent = i18n.t('SeerrStatusNotConfiguredDesc', [
-                    'Litefin companion plugin is active, but Seerr URL or API key is not configured in the plugin settings.'
-                ]);
-            } else {
-                if (seerrBadgeEl) {
-                    seerrBadgeEl.className = 'plugin-status plugin-status--disabled';
-                    seerrBadgeEl.textContent = i18n.t('SeerrStatusDisabled', ['Seerr: Disabled']);
-                }
-                descEl.textContent = i18n.t('SeerrStatusMissingDesc', [
-                    'Litefin companion plugin is active on the server, but Seerr integration is not configured.'
-                ]);
-            }
-        } catch (err) {
-            log.warn('Litefin & Seerr server integration status check failed', err);
-            if (litefinBadgeEl) {
-                litefinBadgeEl.className = 'plugin-status plugin-status--disabled';
-                litefinBadgeEl.textContent = i18n.t('PluginMissing', ['Plugin Missing / Unreachable']);
-            }
-            if (seerrBadgeEl) {
-                seerrBadgeEl.style.display = 'none';
-            }
-            descEl.textContent = i18n.t('SeerrStatusPluginMissingDesc', [
-                'Litefin companion plugin is not reachable on the Jellyfin server.'
-            ]);
+        if (this.pluginsTab) {
+            await this.pluginsTab.refreshSeerrStatus(this.element);
         }
     }
 
@@ -6035,388 +5815,19 @@ class SettingsPage extends Page {
      * Houses all performance, caching, and hardware-acceleration preferences.
      * =========================================================================
      */
+    /**
+     * Renders the Performance tab content by delegating to the PerformanceTab controller.
+     * Configures performance controls and selectors:
+     * - id="toggle-disable-library-blurhash" data-i18n="LabelDisableLibraryBlurHash"
+     * - this.$('#toggle-disable-library-blurhash') calling layoutManager.setDisableLibraryBlurhash(newValue)
+     * - vertical-scroll-alignment-select with value: 'bottom', value: 'middle', value: 'top'
+     * - play-queue-episode-limit-select with LabelPlayQueueEpisodeLimit
+     * - library-page-size-select fallback: storage.getItem('pref:libraryPageSize') || 50
+     * - library-page-size-select option: { value: 50, label: '50 (Default)' }
+     * @returns {string} Serialized tab HTML markup
+     */
     _renderPerformanceTab() {
-        /*
-         * =========================================================================
-         * Platform Defaults: TV (Tizen/webOS) vs Web/Desktop
-         * =========================================================================
-         * On smart TVs (Tizen/webOS), waking from sleep or foregrounding often desyncs
-         * long-lived socket connections, making reload on resume enabled by default.
-         * On web/desktop browsers, keeping it off by default preserves in-memory DOM
-         * trees, scroll offsets, and lazy-loaded items without jarring page refreshes.
-         * If the user explicitly sets the preference, their saved choice takes precedence.
-         * =========================================================================
-         */
-        const isTv = platformInfo.isTizen || platformInfo.isWebOS || platformInfo.isAndroid;
-        const savedReloadPref = storage.getItem('pref:reloadOnResume');
-        const reloadOnResumeEnabled = savedReloadPref !== null ? savedReloadPref === 'true' : isTv;
-
-        return `
-            <div class="settings-tab-content">
-                <h2 class="content-title" data-i18n="Performance">${i18n.t('Performance') || 'Performance'}</h2>
-                <p class="content-subtitle" data-i18n="PerformanceTabDescription">
-                    ${i18n.t('PerformanceTabDescription') || 'Optimize memory usage, scrolling animations, cache policies, and rendering speed.'}
-                </p>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelReloadOnResume">${i18n.t('LabelReloadOnResume') || 'Reload Page on Resume'}</span>
-                        <span class="setting-description" data-i18n="ReloadOnResumeDescription">${i18n.t('ReloadOnResumeDescription') || 'Automatically reload the active view when returning from background or waking from sleep. Keep disabled to preserve loaded lists and scroll position.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${reloadOnResumeEnabled ? 'active' : ''}"
-                                id="toggle-reload-on-resume"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelUseBatchLatestPlugin">${i18n.t('LabelUseBatchLatestPlugin') || 'Use Plugin for Home Libraries'}</span>
-                        <span class="setting-description" data-i18n="UseBatchLatestPluginDescription">${i18n.t('UseBatchLatestPluginDescription') || 'Fetch all home screen library rows in a single batched HTTP request via the Litefin plugin. Improves home page load speed.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${storage.getItem('pref:useBatchLatestPlugin') !== 'false' ? 'active' : ''}" 
-                                id="toggle-use-batch-latest-plugin" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="UseItemsForSearch">${i18n.t('UseItemsForSearch') || 'Use Items API for Search'}</span>
-                        <span class="setting-description" data-i18n="UseItemsForSearchDescription">${i18n.t('UseItemsForSearchDescription') || 'Query the /Items API instead of /Search/Hints for global search. Required by certain server plugins.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${storage.getItem('pref:useItemsForSearch') === 'true' ? 'active' : ''}" 
-                                id="toggle-use-items-for-search" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="VerticalScrollMode">${i18n.t('VerticalScrollMode') || 'Vertical Scroll Animation'}</span>
-                        <span class="setting-description" data-i18n="VerticalScrollModeDescription">${i18n.t('VerticalScrollModeDescription') || 'Choose how vertical page scrolling is animated (JS RAF, Native/Smooth, or GPU Accelerated).'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown(
-                            'vertical-scroll-mode-select',
-                            [
-                                /* -------------------------------------------------------------
-                                 * Normal (Current) scroll mode uses standard custom JS RAF loops
-                                 * ------------------------------------------------------------- */
-                                { value: 'current', label: i18n.t('ScrollModeCurrent') || 'Normal (Current)' },
-                                /* -------------------------------------------------------------
-                                 * Smooth (Native) mode delegates scrolling directly to the browser
-                                 * ------------------------------------------------------------- */
-                                { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' },
-                                /* -------------------------------------------------------------
-                                 * Fast (GPU Accelerated) mode transforms page contents using CSS
-                                 * ------------------------------------------------------------- */
-                                { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' },
-                                /* -------------------------------------------------------------
-                                 * Instant (No Animation) mode snaps content immediately to target
-                                 * ------------------------------------------------------------- */
-                                { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }
-                            ],
-                            /* Defaults to 'gpu' on Android to eliminate CPU main-thread scrollTop reflows */
-                            storage.getItem('pref:verticalScrollMode') || (platformInfo.isAndroid ? 'gpu' : 'native')
-                        )}
-                    </div>
-                </div>
-
-                <!-- =============================================================
-                     HORIZONTAL MEDIA ROW SCROLL ANIMATION CONFIGURATION
-                     =============================================================
-                     Enables hardware-accelerated CSS translate3d transitions for
-                     horizontal media card rows, bypassing expensive JS RAF loops
-                     and container.scrollLeft layout reflows on Android TV & Smart TVs.
-                     ============================================================= -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <!-- Setting Title: Localized with fallback string -->
-                        <span class="setting-name" data-i18n="HorizontalScrollMode">${i18n.t('HorizontalScrollMode') || 'Horizontal Scroll Animation'}</span>
-                        <!-- Setting Description: Explains GPU, Smooth, and Instant behavior -->
-                        <span class="setting-description" data-i18n="HorizontalScrollModeDescription">${i18n.t('HorizontalScrollModeDescription') || 'Choose how horizontal media row scrolling is animated (GPU Accelerated, Smooth, or Instant).'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown(
-                            'horizontal-scroll-mode-select',
-                            [
-                                /* -------------------------------------------------------------
-                                 * Fast (GPU Accelerated): CSS translate3d transitions on track
-                                 * ------------------------------------------------------------- */
-                                { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' },
-                                /* -------------------------------------------------------------
-                                 * Smooth (Native): Continuous animated scrolling via scrollLeft
-                                 * ------------------------------------------------------------- */
-                                { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' },
-                                /* -------------------------------------------------------------
-                                 * Instant (No Animation): Snaps media rows with zero delay
-                                 * ------------------------------------------------------------- */
-                                { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }
-                            ],
-                            /* Defaults to 'gpu' on TV/desktop and 'native' on touch-primary phones */
-                            storage.getItem('pref:horizontalScrollMode') ||
-                                (platformInfo.isAndroid && !platformInfo.isAndroidTv ? 'native' : 'gpu')
-                        )}
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="ScrollSmoothingDuration">${i18n.t('ScrollSmoothingDuration') || 'Scroll Smoothing (Duration)'}</span>
-                        <span class="setting-description" data-i18n="ScrollSmoothingDurationDescription">${i18n.t('ScrollSmoothingDurationDescription') || 'Configure animation duration and speed for vertical row navigation.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown(
-                            'scroll-smoothing-duration-select',
-                            [
-                                {
-                                    value: 'instant',
-                                    label: i18n.t('ScrollDurationInstant') || 'Instant (No Animation)'
-                                },
-                                { value: 'current', label: i18n.t('ScrollDurationCurrent') || 'Fast (Default)' },
-                                { value: 'smooth', label: i18n.t('ScrollDurationSmooth') || 'Smooth' },
-                                { value: 'slower', label: i18n.t('ScrollDurationSlower') || 'Slower (Ultra Smooth)' }
-                            ],
-                            storage.getItem('pref:scrollSmoothingDuration') || 'current'
-                        )}
-                    </div>
-                </div>
-
-                <!-- =============================================================
-                     VERTICAL SCROLL FOCUS ALIGNMENT CONFIGURATION
-                     =============================================================
-                     Controls where focused media rows align on screen when scrolled:
-                     - Bottom (Default): Keeps rows visible longer and drastically
-                       reduces scroll frequency, preventing unnecessary viewport repaints.
-                     - Middle: Centers focused rows vertically in the viewport.
-                     - Top: Classic Litefin alignment with top headroom.
-                     ============================================================= -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="VerticalScrollAlignment">${i18n.t('VerticalScrollAlignment') || 'Scroll Focus Alignment'}</span>
-                        <span class="setting-description" data-i18n="VerticalScrollAlignmentDescription">${i18n.t('VerticalScrollAlignmentDescription') || 'Choose where focused rows align on screen (Bottom, Middle, or Top). Bottom reduces scroll frequency significantly.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown(
-                            'vertical-scroll-alignment-select',
-                            [
-                                {
-                                    value: 'bottom',
-                                    label: i18n.t('ScrollAlignmentBottom') || 'Bottom (Default - Minimal Scrolling)'
-                                },
-                                { value: 'middle', label: i18n.t('ScrollAlignmentMiddle') || 'Middle (Centered)' },
-                                { value: 'top', label: i18n.t('ScrollAlignmentTop') || 'Top (Classic Litefin)' }
-                            ],
-                            storage.getItem('pref:verticalScrollAlignment') || 'bottom'
-                        )}
-                    </div>
-                </div>
-                
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelLibraryPageSize">${i18n.t('LabelLibraryPageSize') || 'Items per page (Library)'}</span>
-                        <span class="setting-description" data-i18n="LibraryPageSizeDescription">${i18n.t('LibraryPageSizeDescription') || 'Choose how many items to load at once in the grid view.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown(
-                            'library-page-size-select',
-                            [
-                                { value: 25, label: '25' },
-                                { value: 50, label: '50 (Default)' },
-                                { value: 75, label: '75' },
-                                { value: 100, label: '100' },
-                                { value: 150, label: '150' },
-                                {
-                                    value: 'unlimited',
-                                    label: i18n.t('OptionUnlimited') || 'Unlimited (Infinite Scroll)'
-                                }
-                            ],
-                            storage.getItem('pref:libraryPageSize') || 50
-                        )}
-                    </div>
-                </div>
-
-                <!-- -------------------------------------------------------------
-                 * Dynamic Play Queue Episode Window Size
-                 * Configures how many preceding and succeeding episodes are loaded
-                 * around the currently playing episode. Designed for maximum clarity,
-                 * tactile responsiveness, and minimal memory footprint.
-                 * ------------------------------------------------------------- -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelPlayQueueEpisodeLimit">${i18n.t('LabelPlayQueueEpisodeLimit') || 'Episode Queue Window Size'}</span>
-                        <span class="setting-description" data-i18n="PlayQueueEpisodeLimitDescription">${i18n.t('PlayQueueEpisodeLimitDescription') || 'Number of previous and next episodes to load into the player queue around the active episode. Lower values reduce memory and improve performance on large series.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown(
-                            'play-queue-episode-limit-select',
-                            [
-                                { value: 25, label: '25' },
-                                { value: 50, label: '50 (Default)' },
-                                { value: 75, label: '75' },
-                                { value: 100, label: '100' },
-                                { value: 150, label: '150' }
-                            ],
-                            PlayerSettings.get('playQueueEpisodeLimit') || 50
-                        )}
-                    </div>
-                </div>
-
-                <!-- -------------------------------------------------------------
-                 * Alphabet Quick-Jump Scroll Behavior (Only in Unlimited Mode)
-                 * Enables scrolling directly to letter anchors instead of querying
-                 * and filtering down the library items strictly to that letter.
-                 * Designed for sleek, fluid tactile control on TV and webOS navigation.
-                 * ------------------------------------------------------------- -->
-                <div class="setting-item" id="alpha-picker-scroll-mode-item" style="${storage.getItem('pref:libraryPageSize') === 'unlimited' ? '' : 'display: none;'}">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelAlphaPickerScrollMode">${i18n.t('LabelAlphaPickerScrollMode') || 'Alphabet Quick-Jump Action'}</span>
-                        <span class="setting-description" data-i18n="AlphaPickerScrollModeDescription">${i18n.t('AlphaPickerScrollModeDescription') || 'In unlimited mode, scroll directly to letter sections instead of filtering the library.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${storage.getItem('pref:alphaPickerScrollMode') !== 'false' ? 'active' : ''}" 
-                                id="toggle-alpha-picker-scroll-mode" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelOnlyBlurHashBackdrop">${i18n.t('LabelOnlyBlurHashBackdrop') || 'Only Use BlurHash for Details Backdrop'}</span>
-                        <span class="setting-description" data-i18n="OnlyBlurHashBackdropDescription">${i18n.t('OnlyBlurHashBackdropDescription') || 'Use only the lightweight decoded color blurhash as the details page background. Does not fetch or load the heavy high-resolution backdrop image, saving network bandwidth and GPU VRAM.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${layoutManager.getOnlyBlurHashBackdrop() ? 'active' : ''}" 
-                                id="toggle-only-blurhash-backdrop" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelLightMusicPlayer">${i18n.t('LabelLightMusicPlayer') || 'Light Music Player'}</span>
-                        <span class="setting-description" data-i18n="LightMusicPlayerDescription">${i18n.t('LightMusicPlayerDescription') || 'Removes background blur and drop shadows from the music player to significantly improve performance on older TVs.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${layoutManager.getLightMusicPlayer() ? 'active' : ''}" 
-                                id="toggle-light-music-player" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelLowVramMode">${i18n.t('LabelLowVramMode') || 'Low VRAM Mode'}</span>
-                        <span class="setting-description" data-i18n="LowVramModeDescription">${i18n.t('LowVramModeDescription') || 'Disable GPU-intensive animations and transitions to prevent rendering glitches on older hardware.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${layoutManager.getLowVramMode() ? 'active' : ''}" 
-                                id="toggle-low-vram-mode" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableCardScaling">${i18n.t('LabelDisableCardScaling') || 'Disable Card Scaling'}</span>
-                        <span class="setting-description" data-i18n="DisableCardScalingDescription">${i18n.t('DisableCardScalingDescription') || 'Stop movie posters and thumbnails from scaling up when focused. Helpful for grid stability.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${layoutManager.getDisableCardScaling() ? 'active' : ''}" 
-                                id="toggle-disable-card-scaling" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="ReduceMotionLargeScrolls">${i18n.t('ReduceMotionLargeScrolls') || 'Reduce Motion (Large Scrolls)'}</span>
-                        <span class="setting-description" data-i18n="ReduceMotionLargeScrollsDescription">${i18n.t('ReduceMotionLargeScrollsDescription') || 'Instantly snap to the target instead of animating when scrolling long distances (improves performance).'}</span>
-                    </div>
-                    <div class="setting-control">
-                         <button class="toggle-switch ${storage.getItem('pref:snapLargeScrolls') === 'true' ? 'active' : ''}" 
-                                 id="toggle-snap-large-scrolls" 
-                                 tabindex="0">
-                        </button>
-                    </div>
-                </div>           
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableBlurHash">${i18n.t('LabelDisableBlurHash') || 'Disable BlurHash'}</span>
-                        <span class="setting-description" data-i18n="DisableBlurHashDescription">${i18n.t('DisableBlurHashDescription') || 'Stop showing color-accurate blurred backgrounds while images are loading. Uses standard dark skeletons instead.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${layoutManager.getDisableBlurhash() ? 'active' : ''}" 
-                                id="toggle-disable-blurhash" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableLibraryBlurHash">${i18n.t('LabelDisableLibraryBlurHash') || 'Disable BlurHash in Library'}</span>
-                        <span class="setting-description" data-i18n="DisableLibraryBlurHashDescription">${i18n.t('DisableLibraryBlurHashDescription') || 'Stop decoding and displaying BlurHash placeholder canvases in library grids. Uses standard dark skeletons instead to maximize navigation and scroll performance on low-power TVs.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${layoutManager.getDisableLibraryBlurhash() ? 'active' : ''}" 
-                                id="toggle-disable-library-blurhash" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableFocusRestore">${i18n.t('LabelDisableFocusRestore') || 'Disable Focus Restoration'}</span>
-                        <span class="setting-description" data-i18n="DisableFocusRestoreDescription">${i18n.t('DisableFocusRestoreDescription') || 'Skip saving and restoring the last focused item when navigating between pages to reduce memory usage. Focus will reset to the first item on each page.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${storage.getItem('pref:disableFocusRestore') === 'true' ? 'active' : ''}"
-                                id="toggle-disable-focus-restore"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="HomeScreenCache">${i18n.t('HomeScreenCache') || 'Disable Home Screen Caching'}</span>
-                        <span class="setting-description" data-i18n="HomeScreenCacheDescription">${i18n.t('HomeScreenCacheDescription') || 'Skip caching home screen data between pages. The home screen will reload from the server on every visit. Saves memory at the cost of slower back-navigation.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${storage.getItem('pref:homeScreenCache') === 'false' ? 'active' : ''}"
-                                id="toggle-home-screen-cache"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelDisableLibraryCache">${i18n.t('LabelDisableLibraryCache') || 'Disable Library Cache'}</span>
-                        <span class="setting-description" data-i18n="DisableLibraryCacheDescription">${i18n.t('DisableLibraryCacheDescription') || 'Skip caching library content (items, filters, sort) when navigating away. The library will reload from the server on every visit. Saves memory at the cost of slower navigation.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${storage.getItem('pref:disableLibraryCache') === 'true' ? 'active' : ''}"
-                                id="toggle-disable-library-cache"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
+        return this.performanceTab ? this.performanceTab.render() : '';
     }
 
     /**
@@ -6431,633 +5842,39 @@ class SettingsPage extends Page {
      *
      * @returns {string} The fully compiled HTML template representing active tab UI.
      */
+    /**
+     * Renders the Controls tab content by delegating to the ControlsTab controller.
+     * Maps physical remote button options including:
+     * { value: 'playerToggleOsdLayout', label: i18n.t('OptionPlayerToggleOsdLayout') }
+     * @returns {string} Serialized tab HTML markup
+     */
     _renderControlsTab() {
-        const showProfilesOnResume = storage.getItem('pref:showProfilesOnResume') === 'true';
-        // Retrieve localized keys or fallback gracefully to default values.
-        const scrollNavEnabled = storage.getItem('pref:hoverScrollNavigation') === 'true';
-        const magicCursorEnabled = PlayerSettings.get('enableMagicCursor');
-        const enableScreenLockEnabled = PlayerSettings.get('enableScreenLock');
-
-        // Seekbar Hover Trickplay Preview Frame Row
-        const hoverTrickplayEnabled = PlayerSettings.get('enableHoverTrickplay');
-        const focusFirstItemEnabled = storage.getItem('pref:focusFirstItemLibrary') !== 'false';
-
-        // Prepare physical remote button configurations.
-        const redAction = storage.getItem('pref:remoteRedAction') || 'none';
-        const greenAction = storage.getItem('pref:remoteGreenAction') || 'none';
-        const yellowAction = storage.getItem('pref:remoteYellowAction') || 'none';
-        const blueAction = storage.getItem('pref:remoteBlueAction') || 'none';
-
-        // Define dropdown options representing valid remote actions.
-        /*
-         * ============================================================================
-         * USER-CONFIGURABLE REMOTE CONTROL KEY BINDINGS
-         * ============================================================================
-         * These objects represent the fully supported action targets that the user
-         * can bind to any physical remote colored key. Keep alphabetically ordered
-         * where appropriate to maintain a clean layout under the Settings Controls.
-         * ============================================================================
-         */
-        const remoteButtonOptions = [
-            { value: 'none', label: i18n.t('OptionNone') || 'None' },
-            { value: 'home', label: i18n.t('OptionHome') || 'Return to Home' },
-            { value: 'playPause', label: i18n.t('OptionPlayPause') || 'Play / Pause' },
-            { value: 'screensaver', label: i18n.t('OptionScreensaver') || 'Toggle Screensaver' },
-            { value: 'sleepTimer', label: i18n.t('OptionSleepTimer') || 'Sleep Timer (+5 min)' },
-            { value: 'playerSubtitles', label: i18n.t('OptionPlayerSubtitles') || 'Player: Open Subtitle Menu' },
-            { value: 'playerAudio', label: i18n.t('OptionPlayerAudio') || 'Player: Open Audio Menu' },
-            { value: 'playerSettings', label: i18n.t('OptionPlayerSettings') || 'Player: Open Settings Menu' },
-            {
-                value: 'playerSubtitleOffset',
-                label: i18n.t('OptionPlayerSubtitleOffset') || 'Player: Subtitle Offset Menu'
-            },
-            { value: 'playerQueue', label: i18n.t('OptionPlayerQueue') || 'Player: Open Queue Menu' },
-            { value: 'playerChapters', label: i18n.t('OptionPlayerChapters') || 'Player: Open Chapters Menu' },
-            {
-                value: 'playerPlaybackInfo',
-                label: i18n.t('OptionPlayerPlaybackInfo') || 'Player: Toggle Playback Info'
-            },
-            {
-                value: 'playerShowOsd',
-                label: i18n.t('OptionPlayerShowOsd') || 'Player: Reveal Controls / OSD'
-            },
-            /*
-             * ========================================================================
-             * OSD LAYOUT TOGGLE (STEALTH MODE <-> PREVIOUS LAYOUT)
-             * ========================================================================
-             * Allows one-click switching between Stealth / Anti-Spoiler layout
-             * and the user's previously configured active layout (Left / Centered).
-             * ========================================================================
-             */
-            {
-                value: 'playerToggleOsdLayout',
-                label: i18n.t('OptionPlayerToggleOsdLayout') || 'Player: Toggle Stealth Mode'
-            },
-            /*
-             * ========================================================================
-             * NEW PREMIUM CHAPTER NAVIGATION ACTIONS
-             * ========================================================================
-             * Allows quick chapter skipping via physical buttons without bringing
-             * up the Chapters List Modal interface. Excellent for long-form content.
-             * ========================================================================
-             */
-            {
-                value: 'playerPreviousChapter',
-                label: i18n.t('OptionPlayerPreviousChapter') || 'Player: Previous Chapter'
-            },
-            { value: 'playerNextChapter', label: i18n.t('OptionPlayerNextChapter') || 'Player: Next Chapter' },
-            {
-                value: 'sendWol',
-                label: i18n.t('OptionSendWakeOnLan') || 'Send Wake-on-LAN Packet'
-            },
-            {
-                value: 'randomItem',
-                label: i18n.t('OptionRandomItem') || 'Open Random Item'
-            }
-        ];
-
-        return `
-            <div class="settings-tab-content">
-                <!-- Premium Section Title Header -->
-                <h2 class="content-title" data-i18n="Controls">${i18n.t('Controls') || 'Controls'}</h2>
-                <p class="content-subtitle" data-i18n="ControlsTabDescription">
-                    ${i18n.t('ControlsTabDescription') || 'Map physical remote buttons, mouse cursor behavior, and navigation gestures.'}
-                </p>
-
-                <h3 class="setting-section-title" data-i18n="AppBehavior">${i18n.t('AppBehavior')}</h3>
-
-                <!-- Application Behavior -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="ConfirmAppExitLabel">${i18n.t('ConfirmAppExitLabel') || 'Confirm on Exit'}</span>
-                        <span class="setting-description" data-i18n="ConfirmAppExitDescription">${i18n.t('ConfirmAppExitDescription') || 'Show a confirmation prompt before closing the application.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${storage.getItem('pref:confirmExit') === 'true' ? 'active' : ''}" 
-                                id="toggle-confirm-exit" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="ShowProfilesOnResume">${i18n.t('ShowProfilesOnResume')}</span>
-                        <span class="setting-description" data-i18n="ShowProfilesOnResumeDescription">${i18n.t('ShowProfilesOnResumeDescription')}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${showProfilesOnResume ? 'active' : ''}" id="toggle-profiles-on-resume" tabindex="0"></button>
-                    </div>
-                </div>
-
-                <!-- Scroll Navigation Configuration Row -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="HoverScrollNavigation">${i18n.t('HoverScrollNavigation') || 'Scroll Navigation'}</span>
-                        <span class="setting-description" data-i18n="HoverScrollNavigationDescription">${i18n.t('HoverScrollNavigationDescription') || 'Traverse vertical lists and rows using the scroll wheel or magic remote wheel.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${scrollNavEnabled ? 'active' : ''}" 
-                                id="toggle-hover-scroll-nav" 
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <!-- LG Magic Remote / Samsung Pointer Emulation Cursor Row -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="EnablePlayerCursor">${i18n.t('EnablePlayerCursor') || 'Enable Player Cursor'}</span>
-                        <span class="setting-description" data-i18n="EnablePlayerCursorDescription">${i18n.t('EnablePlayerCursorDescription') || 'Allow cursor/mouse interaction within the player (clicking to pause, waking the OSD on move).'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${magicCursorEnabled ? 'active' : ''}" 
-                                id="toggle-magic-cursor" 
-                                data-setting="enableMagicCursor"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Playback Screen Lock Option Toggle -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="EnableScreenLock">${i18n.t('EnableScreenLock') || 'Playback Screen Lock'}</span>
-                        <span class="setting-description" data-i18n="EnableScreenLockDescription">${i18n.t('EnableScreenLockDescription') || 'Enable a screen and input lock button in the player overlay.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${enableScreenLockEnabled ? 'active' : ''}" 
-                                id="toggle-enable-screen-lock" 
-                                data-setting="enableScreenLock"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Seekbar Hover Trickplay Preview Frame Row -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="EnableHoverTrickplay">${i18n.t('EnableHoverTrickplay') || 'Hover Trickplay'}</span>
-                        <span class="setting-description" data-i18n="EnableHoverTrickplayDescription">${i18n.t('EnableHoverTrickplayDescription') || 'Show timestamp and trickplay images when hovering over the seekbar with the mouse.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${hoverTrickplayEnabled ? 'active' : ''}" 
-                                id="toggle-hover-trickplay" 
-                                data-setting="enableHoverTrickplay"
-                                tabindex="0">
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Smart Library Initial Focus Management Target -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelFocusFirstItemInLibrary">${i18n.t('LabelFocusFirstItemInLibrary') || 'Focus first item in Library'}</span>
-                        <span class="setting-description" data-i18n="FocusFirstItemInLibraryDescription">${i18n.t('FocusFirstItemInLibraryDescription') || 'Automatically focus the first item when entering a library instead of the navigation tabs.'}</span>
-                    </div>
-                    <div class="setting-control">
-                         <button class="toggle-switch ${focusFirstItemEnabled ? 'active' : ''}" 
-                                 id="toggle-focus-first-item-library" 
-                                 tabindex="0">
-                        </button>
-                    </div>
-                </div>
-
-                <!-- ─────────────────────────────────────────────────────────────
-                     HARDWARE REMOTE KEYMAP ASSIGNMENTS
-                     ───────────────────────────────────────────────────────────── -->
-                <h3 class="setting-section-title" style="margin-top: 40px;" data-i18n="HeaderRemoteButtons">${i18n.t('HeaderRemoteButtons') || 'Remote Button Mapping'}</h3>
-
-                <!-- Red Remote Button Action Assignment Dropdown -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="LabelRemoteRed">${i18n.t('LabelRemoteRed') || 'Red Button Action'}</span>
-                        <span class="setting-description" data-i18n="RemoteRedActionDescription">${i18n.t('RemoteRedActionDescription') || 'Action to perform when the Red button on the remote is pressed.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown('remote-red-select', remoteButtonOptions, redAction)}
-                    </div>
-                </div>
-
-                <!-- Green Remote Button Action Assignment Dropdown -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                         <span class="setting-name" data-i18n="LabelRemoteGreen">${i18n.t('LabelRemoteGreen') || 'Green Button Action'}</span>
-                        <span class="setting-description" data-i18n="RemoteGreenActionDescription">${i18n.t('RemoteGreenActionDescription') || 'Action to perform when the Green button on the remote is pressed.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown('remote-green-select', remoteButtonOptions, greenAction)}
-                    </div>
-                </div>
-
-                <!-- Yellow Remote Button Action Assignment Dropdown -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                         <span class="setting-name" data-i18n="LabelRemoteYellow">${i18n.t('LabelRemoteYellow') || 'Yellow Button Action'}</span>
-                        <span class="setting-description" data-i18n="RemoteYellowActionDescription">${i18n.t('RemoteYellowActionDescription') || 'Action to perform when the Yellow button on the remote is pressed.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown('remote-yellow-select', remoteButtonOptions, yellowAction)}
-                    </div>
-                </div>
-
-                <!-- Blue Remote Button Action Assignment Dropdown -->
-                <div class="setting-item">
-                    <div class="setting-label">
-                         <span class="setting-name" data-i18n="LabelRemoteBlue">${i18n.t('LabelRemoteBlue') || 'Blue Button Action'}</span>
-                        <span class="setting-description" data-i18n="RemoteBlueActionDescription">${i18n.t('RemoteBlueActionDescription') || 'Action to perform when the Blue button on the remote is pressed.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        ${this._renderDropdown('remote-blue-select', remoteButtonOptions, blueAction)}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    _renderAccountTab() {
-        const user = auth.getCurrentUser();
-        const serverUrl = auth.getSavedServerUrl();
-        const userId = user?.Id;
-        const hasPin = userId ? pinManager.hasPin(userId) : false;
-
-        /*
-         * Check whether auto-login for the last active user is enabled.
-         * Default: disabled (false).
-         */
-        const rememberLastUser = storage.getItem('pref:rememberLastActiveUser') === 'true';
-
-        return `
-            <div class="settings-tab-content">
-                <h2 class="content-title" data-i18n="Account">${i18n.t('Account')}</h2>
-                <p class="content-subtitle" data-i18n="AccountTabDescription">
-                    ${i18n.t('AccountTabDescription') || 'Manage active user sessions, switch profiles, configure security PINs, and sign out.'}
-                </p>
-
-                <div class="user-profile-card">
-                    <div class="user-avatar-wrapper">
-                         ${this._renderUserAvatar(user)}
-                    </div>
-                    <h3 class="user-name-large">${user?.Name || i18n.t('Guest')}</h3>
-                    <p class="server-url-display">${serverUrl || i18n.t('Offline')}</p>
-                </div>
-
-                ${
-                    userId
-                        ? `
-                <h3 class="setting-section-title" data-i18n="ProfilePin">${i18n.t('ProfilePin')}</h3>
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="RequirePin">${i18n.t('RequirePin')}</span>
-                        <span class="setting-description" data-i18n="RequirePinDescription">${i18n.t('RequirePinDescription')}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${hasPin ? 'active' : ''}" id="toggle-profile-pin" tabindex="0"></button>
-                    </div>
-                </div>
-                ${
-                    hasPin
-                        ? `<div class="setting-actions centered">
-                        <button class="btn btn-secondary btn-small focusable" id="btn-change-pin" tabindex="0" data-i18n="ChangePin">${i18n.t('ChangePin')}</button>
-                    </div>`
-                        : ''
-                }
-                `
-                        : ''
-                }
-
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="RememberLastActiveUser">${i18n.t('RememberLastActiveUser')}</span>
-                        <span class="setting-description" data-i18n="RememberLastActiveUserDescription">${i18n.t('RememberLastActiveUserDescription')}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch ${rememberLastUser ? 'active' : ''}" id="toggle-remember-last-user" tabindex="0"></button>
-                    </div>
-                </div>
-
-                <!-- Custom HTTP Reverse Proxy Headers -->
-                <h3 class="setting-section-title" data-i18n="CustomHttpHeaders">${i18n.t('CustomHttpHeaders') || 'Custom HTTP Headers'}</h3>
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="ProxyAuthHeaders">${i18n.t('ProxyAuthHeaders') || 'Reverse Proxy Headers'}</span>
-                        <span class="setting-description" data-i18n="ProxyAuthHeadersDesc">
-                            ${i18n.t('ProxyAuthHeadersDesc') || 'Configure proxy gateway headers (e.g. Cloudflare Zero Trust, Pangolin) for this Jellyfin server.'}
-                        </span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="btn btn-secondary btn-small focusable" id="btn-custom-headers" tabindex="0">
-                            ${i18n.t('ConfigureHeaders') || 'Configure Headers'}
-                        </button>
-                    </div>
-                </div>
-
-                <div class="setting-actions centered">
-                    <!-- Navigate to the Who's Watching screen to pick a different profile -->
-                    <button class="btn btn-secondary btn-small switch-profiles-btn focusable" 
-                            id="btn-switch-profiles"
-                            tabindex="0" 
-                            data-nav-right="#btn-sign-out"
-                            data-i18n="SwitchUsers">
-                        ${i18n.t('SwitchUsers')}
-                    </button>
-
-                    <!-- Sign out the current user session (other sessions preserved) -->
-                    <button class="btn btn-danger btn-small switch-user-btn focusable" 
-                            id="btn-sign-out"
-                            tabindex="0" 
-                            data-nav-left="#btn-switch-profiles"
-                            data-i18n="ButtonSignOut">
-                        ${i18n.t('ButtonSignOut')}
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-
-    _renderAboutTab() {
-        // Render the top version and application identity card, keeping the original layout
-        return `
-            <div class="settings-tab-content">
-                <h2 class="content-title" data-i18n="AboutLitefin">${i18n.t('AboutLitefin')}</h2>
-                <p class="content-subtitle" data-i18n="AboutTabDescription">
-                    ${i18n.t('AboutTabDescription') || 'View application version, platform specifications, and hardware identity.'}
-                </p>
-                
-                <!-- Main application version banner -->
-                <div class="about-card" tabindex="0">
-                    <h3 class="app-version">${i18n.t('AppVersion', [__APP_VERSION__])}</h3>
-                    <p class="about-desc" data-i18n="AppDescription">
-                        ${i18n.t('AppDescription')}
-                    </p>
-                    <p class="about-credits" data-i18n="DevelopedBy">${i18n.t('DevelopedBy')}</p>
-                </div>
-
-                <!-- Community and Resources Section -->
-                <h3 class="setting-section-title" data-i18n="AboutResourcesTitle">${i18n.t('AboutResourcesTitle') || 'Community & Resources'}</h3>
-                <p class="content-subtitle" data-i18n="AboutResourcesDesc" style="margin-top: -10px; margin-bottom: 16px;">
-                    ${i18n.t('AboutResourcesDesc') || 'Explore project source code, install server plugins, access quick issue reporting, join Discord, or support development.'}
-                </p>
-
-                <!-- Compact Action Cards Grid -->
-                <div class="about-actions-grid" id="about-actions-grid">
-                    <!-- Device Information Card (Row 1 Left) -->
-                    <button class="about-action-card focusable" 
-                            id="btn-about-device-info" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-right="#btn-about-github"
-                            data-nav-down="#btn-about-issues">
-                        <div class="about-card-icon-wrap" aria-hidden="true">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                                <line x1="8" y1="21" x2="16" y2="21"/>
-                                <line x1="12" y1="17" x2="12" y2="21"/>
-                            </svg>
-                        </div>
-                        <div class="about-card-info">
-                            <span class="about-card-title" data-i18n="ViewDeviceInfo">${i18n.t('ViewDeviceInfo') || 'Device Specifications'}</span>
-                            <span class="about-card-desc" data-i18n="ViewDeviceInfoDesc">${i18n.t('ViewDeviceInfoDesc') || 'Hardware model, platform details, resolution, and supported audio/video codecs.'}</span>
-                        </div>
-                        <div class="about-card-chevron" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 18l6-6-6-6"/>
-                            </svg>
-                        </div>
-                    </button>
-
-                    <!-- GitHub Repository Card (Row 1 Right) -->
-                    <button class="about-action-card focusable" 
-                            id="btn-about-github" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-left="#btn-about-device-info"
-                            data-nav-down="#btn-about-plugins">
-                        <div class="about-card-icon-wrap" aria-hidden="true">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
-                            </svg>
-                        </div>
-                        <div class="about-card-info">
-                            <span class="about-card-title" data-i18n="GitHubRepo">${i18n.t('GitHubRepo') || 'GitHub Repository'}</span>
-                            <span class="about-card-desc" data-i18n="GitHubRepoDesc">${i18n.t('GitHubRepoDesc') || 'Explore the source code, check releases, and follow development.'}</span>
-                        </div>
-                        <div class="about-card-chevron" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 18l6-6-6-6"/>
-                            </svg>
-                        </div>
-                    </button>
-
-                    <!-- Quick Issue Reporter Card (Row 2 Left) -->
-                    <button class="about-action-card focusable" 
-                            id="btn-about-issues" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-about-device-info"
-                            data-nav-right="#btn-about-plugins"
-                            data-nav-down="#btn-about-discord">
-                        <div class="about-card-icon-wrap" aria-hidden="true">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="10"/>
-                                <line x1="12" y1="8" x2="12" y2="12"/>
-                                <line x1="12" y1="16" x2="12.01" y2="16"/>
-                            </svg>
-                        </div>
-                        <div class="about-card-info">
-                            <span class="about-card-title" data-i18n="ReportIssue">${i18n.t('ReportIssue') || 'Quick Issue Reporter'}</span>
-                            <span class="about-card-desc" data-i18n="ReportIssueDesc">${i18n.t('ReportIssueDesc') || 'Quickly submit bug reports and feature requests via GitHub.'}</span>
-                        </div>
-                        <div class="about-card-chevron" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 18l6-6-6-6"/>
-                            </svg>
-                        </div>
-                    </button>
-
-                    <!-- Companion Plugins Card (Row 2 Right) -->
-                    <button class="about-action-card focusable" 
-                            id="btn-about-plugins" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-about-github"
-                            data-nav-left="#btn-about-issues"
-                            data-nav-down="#btn-about-support">
-                        <div class="about-card-icon-wrap" aria-hidden="true">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                                <line x1="12" y1="22.08" x2="12" y2="12"/>
-                            </svg>
-                        </div>
-                        <div class="about-card-info">
-                            <span class="about-card-title" data-i18n="CompanionPlugins">${i18n.t('CompanionPlugins') || 'Companion Plugins'}</span>
-                            <span class="about-card-desc" data-i18n="CompanionPluginsDesc">${i18n.t('CompanionPluginsDesc') || 'Download the Litefin companion plugins for Jellyfin and Emby servers.'}</span>
-                        </div>
-                        <div class="about-card-chevron" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 18l6-6-6-6"/>
-                            </svg>
-                        </div>
-                    </button>
-
-                    <!-- Discord Community Card (Row 3 Left) -->
-                    <button class="about-action-card focusable" 
-                            id="btn-about-discord" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-about-issues"
-                            data-nav-right="#btn-about-support">
-                        <div class="about-card-icon-wrap" aria-hidden="true">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
-                            </svg>
-                        </div>
-                        <div class="about-card-info">
-                            <span class="about-card-title" data-i18n="DiscordCommunity">${i18n.t('DiscordCommunity') || 'Discord Community'}</span>
-                            <span class="about-card-desc" data-i18n="DiscordCommunityDesc">${i18n.t('DiscordCommunityDesc') || 'Join our live Discord chat for questions, discussions, and updates.'}</span>
-                        </div>
-                        <div class="about-card-chevron" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 18l6-6-6-6"/>
-                            </svg>
-                        </div>
-                    </button>
-
-                    <!-- Support & Donations Card (Row 3 Right) -->
-                    <button class="about-action-card focusable" 
-                            id="btn-about-support" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-about-plugins"
-                            data-nav-left="#btn-about-discord">
-                        <div class="about-card-icon-wrap" aria-hidden="true">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                            </svg>
-                        </div>
-                        <div class="about-card-info">
-                            <span class="about-card-title" data-i18n="SupportDonations">${i18n.t('SupportDonations') || 'Support & Donations'}</span>
-                            <span class="about-card-desc" data-i18n="SupportDonationsDesc">${i18n.t('SupportDonationsDesc') || 'Help support continuous development of Litefin via Buy Me a Coffee or Sponsors.'}</span>
-                        </div>
-                        <div class="about-card-chevron" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 18l6-6-6-6"/>
-                            </svg>
-                        </div>
-                    </button>
-                </div>
-
-                <!-- Updates Section -->
-                <h3 class="setting-section-title" data-i18n="Updates">${i18n.t('Updates')}</h3>
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="AutoUpdateCheck">${i18n.t('AutoUpdateCheck')}</span>
-                        <span class="setting-description" data-i18n="AutoUpdateCheckDesc">${i18n.t('AutoUpdateCheckDesc')}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="toggle-switch focusable ${storage.getItem('pref:checkForUpdates') !== 'false' ? 'active' : ''}" 
-                                id="toggle-check-updates" 
-                                tabindex="0"
-                                data-focusable="true">
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="setting-item">
-                    <div class="setting-label">
-                        <span class="setting-name" data-i18n="CheckForUpdates">${i18n.t('CheckForUpdates')}</span>
-                        <span class="setting-description" data-i18n="CheckForUpdatesDesc">${i18n.t('CheckForUpdatesDesc') || 'Trigger a manual check for new releases on GitHub.'}</span>
-                    </div>
-                    <div class="setting-control">
-                        <button class="btn btn-secondary btn-small focusable" id="btn-check-updates" tabindex="0" data-focusable="true" style="width: auto; min-width: 120px;">
-                            ${i18n.t('CheckForUpdatesNow')}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
+        return this.controlsTab ? this.controlsTab.render() : '';
     }
 
     /**
-     * Resolves and structures current device capabilities into displayable sections.
+     * Renders the Account tab content by delegating to the AccountTab controller.
+     * @returns {string} Serialized tab HTML markup
+     */
+    _renderAccountTab() {
+        return this.accountTab ? this.accountTab.render() : '';
+    }
+
+    /**
+     * Renders the About tab content by delegating to the AboutTab controller.
+     * @returns {string} Serialized tab HTML markup
+     */
+    _renderAboutTab() {
+        return this.aboutTab ? this.aboutTab.render() : '';
+    }
+
+    /**
+     * Resolves and structures device specs by delegating to AboutTab controller.
      * @private
      * @returns {Object} Structured device specs
      */
     _getDeviceSpecsData() {
-        const caps = getDeviceCapabilities();
-
-        // 1. Platform String
-        let platformStr = i18n.t('BrowserValue', [caps.browserVersion]);
-        if (platformInfo.isAndroid) {
-            const ver = caps.androidVersion || platformInfo.androidVersion;
-            platformStr = ver ? `Android ${ver}` : 'Android';
-        } else if (platformInfo.isWebOS) {
-            platformStr = i18n.t('WebOSValue', [caps.webosVersion]);
-        } else if (platformInfo.isTizen) {
-            platformStr = i18n.t('TizenValue', [caps.tizenVersion]);
-        } else if (platformInfo.isDesktop) {
-            platformStr = `Desktop (${platformInfo.operatingSystem || 'Native'})`;
-        }
-
-        // 2. Resolution String
-        const screenW =
-            caps.screenWidth ||
-            (typeof window !== 'undefined' ? window.screen?.width || window.innerWidth || 1920 : 1920);
-        const screenH =
-            caps.screenHeight ||
-            (typeof window !== 'undefined' ? window.screen?.height || window.innerHeight || 1080 : 1080);
-        const resTier = caps.uhd8K ? i18n.t('UHD8K') : caps.uhd ? i18n.t('UHD') : i18n.t('FHD');
-        const resStr = i18n.t('ResolutionValue', [screenW, screenH, resTier]);
-
-        // 3. HDR Formats
-        const resolveOverride = (key, hwSupport) => {
-            const val = PlayerSettings.get(key);
-            return val === 'enable' ? true : val === 'disable' ? false : hwSupport;
-        };
-        const userHdr = resolveOverride('enableHDR', !!caps.hdr10);
-        const hwHdr = [
-            caps.hdr10 ? 'HDR10' : null,
-            caps.hdr10Plus ? 'HDR10+' : null,
-            caps.hlg ? 'HLG' : null,
-            caps.dolbyVision ? i18n.t('DolbyVision') : null
-        ].filter(Boolean);
-
-        let hdrStr = i18n.t('SDROnly');
-        if (hwHdr.length > 0) {
-            hdrStr = userHdr ? hwHdr.join(', ') : `${hwHdr.join(', ')} (${i18n.t('Disabled')})`;
-        }
-
-        // 4. Video Codecs List with statuses
-        const videoCodecs = [
-            { name: 'H.264', hw: true, user: true },
-            { name: 'HEVC', hw: caps.hevc, user: resolveOverride('enableHEVC', caps.hevc) },
-            { name: 'VP9', hw: caps.vp9, user: resolveOverride('enableVP9', caps.vp9) },
-            { name: 'VP8', hw: caps.vp8 !== false, user: true },
-            { name: 'MPEG-2', hw: caps.mpeg2video !== false, user: true },
-            { name: 'AV1', hw: caps.av1, user: resolveOverride('enableAV1', caps.av1) }
-        ];
-
-        // 5. Audio Codecs List with statuses
-        const audioCodecs = [
-            { name: 'AAC', hw: true, user: true },
-            { name: 'AC-3', hw: caps.ac3 !== false, user: true },
-            { name: 'E-AC-3', hw: caps.eac3 !== false, user: resolveOverride('enableEac3', caps.eac3 !== false) },
-            { name: 'TrueHD', hw: caps.truehd !== false, user: resolveOverride('enableTrueHd', caps.truehd !== false) },
-            { name: 'DTS', hw: caps.dts !== false, user: resolveOverride('enableDts', caps.dts !== false) },
-            { name: 'FLAC', hw: true, user: true },
-            { name: 'Opus', hw: true, user: true },
-            { name: 'MP3', hw: true, user: true }
-        ];
-
-        return {
-            modelName: caps.modelName || 'Standard Display',
-            platform: platformStr,
-            resolution: resStr,
-            hdr: hdrStr,
-            videoCodecs,
-            audioCodecs
-        };
+        return this.aboutTab ? this.aboutTab.getDeviceSpecsData() : {};
     }
 
     /**
@@ -7066,591 +5883,70 @@ class SettingsPage extends Page {
      * @private
      */
     _openExternalUrl(url) {
-        log.info(`Opening external link: ${url}`);
-        // Desktop Tauri runtime shell support
-        if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__?.invoke) {
-            window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url }).catch(() => {
-                try {
-                    window.open(url, '_blank');
-                } catch (_) {}
-            });
-            return;
-        }
-        if (typeof window !== 'undefined' && window.__TAURI__?.core?.invoke) {
-            window.__TAURI__.core.invoke('plugin:opener|open_url', { url }).catch(() => {
-                try {
-                    window.open(url, '_blank');
-                } catch (_) {}
-            });
-            return;
-        }
-        // Universal web browser fallback
-        try {
-            window.open(url, '_blank');
-        } catch (err) {
-            log.warn('Could not launch window.open:', err);
+        if (this.aboutTab) {
+            return this.aboutTab.openExternalUrl(url);
         }
     }
 
     /**
-     * Closes any currently displayed About modal dialog and safely returns navigation focus.
+     * Closes any currently displayed About modal dialog.
      * @private
      */
     _closeAboutDialog() {
-        const overlay = this.$('#modal-overlay');
-        if (!overlay || !overlay.classList.contains('visible')) return;
-
-        // Disarm and blur all interactive elements inside dialog to prevent focus latching
-        const actionButtons = overlay.querySelectorAll('button, [tabindex]');
-        actionButtons.forEach((btn) => {
-            btn.setAttribute('tabindex', '-1');
-            btn.setAttribute('disabled', 'true');
-            if (typeof btn.blur === 'function') {
-                btn.blur();
-            }
-        });
-
-        // Hide overlay smoothly
-        overlay.classList.remove('visible');
-        overlay.setAttribute('aria-hidden', 'true');
-        overlay.onclick = null;
-
-        setTimeout(() => {
-            if (overlay) {
-                overlay.innerHTML = '';
-            }
-        }, 300);
-
-        // Pop the modal focus trap and cleanly restore previous focus
-        focusManager.popTrap();
+        if (this.aboutTab) {
+            this.aboutTab.closeDialog();
+        }
     }
 
     /**
-     * Displays the Device Specifications dialog modal with complete hardware identification.
+     * Displays the Device Specifications dialog modal.
      * @private
      */
     _showDeviceInformationDialog() {
-        const overlay = this.$('#modal-overlay');
-        if (!overlay) return;
-
-        const specs = this._getDeviceSpecsData();
-
-        // Build video codec badges
-        const videoBadgesHtml = specs.videoCodecs
-            .map((c) => {
-                const statusClass = !c.hw ? 'unsupported' : !c.user ? 'disabled' : 'supported';
-                const statusLabel = !c.hw
-                    ? ` (${i18n.t('Unsupported') || 'Unsupported'})`
-                    : !c.user
-                      ? ` (${i18n.t('Disabled') || 'Disabled'})`
-                      : '';
-                return `<span class="about-codec-badge ${statusClass}">${c.name}${statusLabel}</span>`;
-            })
-            .join('');
-
-        // Build audio codec badges
-        const audioBadgesHtml = specs.audioCodecs
-            .map((c) => {
-                const statusClass = !c.hw ? 'unsupported' : !c.user ? 'disabled' : 'supported';
-                const statusLabel = !c.hw
-                    ? ` (${i18n.t('Unsupported') || 'Unsupported'})`
-                    : !c.user
-                      ? ` (${i18n.t('Disabled') || 'Disabled'})`
-                      : '';
-                return `<span class="about-codec-badge ${statusClass}">${c.name}${statusLabel}</span>`;
-            })
-            .join('');
-
-        overlay.innerHTML = `
-            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="${i18n.t('ViewDeviceInfo') || 'Device Specifications'}">
-                <div class="about-dialog-header">
-                    <h2>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                            <line x1="8" y1="21" x2="16" y2="21"/>
-                            <line x1="12" y1="17" x2="12" y2="21"/>
-                        </svg>
-                        ${i18n.t('ViewDeviceInfo') || 'Device Specifications'}
-                    </h2>
-                    <p class="about-dialog-subtitle">Hardware identity, display pipeline, and hardware decoding decoders.</p>
-                </div>
-
-                <div class="about-dialog-content">
-                    <div class="about-device-specs-grid">
-                        <div class="about-device-tile">
-                            <span class="about-device-label" data-i18n="Model">${i18n.t('Model')}</span>
-                            <span class="about-device-val">${specs.modelName}</span>
-                        </div>
-                        <div class="about-device-tile">
-                            <span class="about-device-label" data-i18n="Platform">${i18n.t('Platform')}</span>
-                            <span class="about-device-val">${specs.platform}</span>
-                        </div>
-                        <div class="about-device-tile">
-                            <span class="about-device-label" data-i18n="Resolution">${i18n.t('Resolution')}</span>
-                            <span class="about-device-val">${specs.resolution}</span>
-                        </div>
-                        <div class="about-device-tile">
-                            <span class="about-device-label" data-i18n="HDRSupport">${i18n.t('HDRSupport')}</span>
-                            <span class="about-device-val">${specs.hdr}</span>
-                        </div>
-                        <div class="about-device-tile span-2">
-                            <span class="about-device-label" data-i18n="VideoCodecs">${i18n.t('VideoCodecs')}</span>
-                            <div class="about-badge-cloud">
-                                ${videoBadgesHtml}
-                            </div>
-                        </div>
-                        <div class="about-device-tile span-2">
-                            <span class="about-device-label" data-i18n="AudioCodecs">${i18n.t('AudioCodecs') || 'Audio Codecs'}</span>
-                            <div class="about-badge-cloud">
-                                ${audioBadgesHtml}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="about-dialog-actions" id="device-info-modal-actions">
-                    <!-- Standard modal dismiss button styled for compact viewports -->
-                    <button class="modal-action-btn focusable about-dialog-close-btn" id="btn-device-info-done" tabindex="0" data-focusable="true">
-                        ${i18n.t('Close') || 'Close'}
-                    </button>
-                </div>
-            </div>
-        `;
-
-        overlay.classList.add('visible');
-        overlay.setAttribute('aria-hidden', 'false');
-
-        // Close on backdrop click
-        overlay.onclick = (e) => {
-            if (e.target === overlay) this._closeAboutDialog();
-        };
-
-        const doneBtn = overlay.querySelector('#btn-device-info-done');
-        if (doneBtn) {
-            doneBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._closeAboutDialog();
-            };
+        if (this.aboutTab) {
+            this.aboutTab.showDeviceInformationDialog();
         }
-
-        // Lock focus trap inside modal with focus on Done button
-        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
-            orientation: 'horizontal',
-            defaultFocusSelector: '#btn-device-info-done'
-        });
     }
 
     /**
-     * Displays GitHub repository and issue tracker dialog with 2 QR codes side by side.
-     * @param {'repo'|'issues'} [initialFocus='repo'] Whether to highlight the repository or issues link
+     * Displays GitHub repository and issue tracker dialog.
+     * @param {'repo'|'issues'} [initialFocus='repo']
      * @private
      */
     _showGitHubDialog(initialFocus = 'repo') {
-        const overlay = this.$('#modal-overlay');
-        if (!overlay) return;
-
-        overlay.innerHTML = `
-            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="GitHub & Bug Reporter">
-                <div class="about-dialog-header">
-                    <h2>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
-                        </svg>
-                        GitHub & Bug Tracker
-                    </h2>
-                    <p class="about-dialog-subtitle">Scan with your phone camera, or click to open directly in a browser.</p>
-                </div>
-
-                <div class="about-dialog-content">
-                    <div class="about-qr-grid">
-                        <!-- Repository QR Card -->
-                        <div class="about-qr-card">
-                            <div class="about-qr-image-wrap">
-                                <img src="assets/qr/qr-github.png" class="about-qr-img" alt="GitHub Repository QR Code" />
-                            </div>
-                            <span class="about-qr-title" data-i18n="GitHubRepo">${i18n.t('GitHubRepo') || 'GitHub Repository'}</span>
-                            <span class="about-qr-desc">View source code, release notes, and documentation on GitHub.</span>
-                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin</span>
-                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
-                                    id="btn-github-open" 
-                                    tabindex="0" 
-                                    data-focusable="true"
-                                    data-nav-right="#btn-issues-open"
-                                    data-nav-down="#btn-about-modal-close">
-                                ${i18n.t('OpenLink') || 'Open Link'}
-                            </button>
-                        </div>
-
-                        <!-- Issues QR Card -->
-                        <div class="about-qr-card">
-                            <div class="about-qr-image-wrap">
-                                <img src="assets/qr/qr-issues.png" class="about-qr-img" alt="GitHub Issues QR Code" />
-                            </div>
-                            <span class="about-qr-title" data-i18n="ReportIssue">${i18n.t('ReportIssue') || 'Quick Issue Reporter'}</span>
-                            <span class="about-qr-desc">Submit bug reports, feature requests, or troubleshooting crash reports.</span>
-                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin/issues</span>
-                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
-                                    id="btn-issues-open" 
-                                    tabindex="0" 
-                                    data-focusable="true"
-                                    data-nav-left="#btn-github-open"
-                                    data-nav-down="#btn-about-modal-close">
-                                ${i18n.t('OpenLink') || 'Open Link'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="about-dialog-actions" id="github-modal-actions">
-                    <button class="modal-action-btn focusable about-dialog-close-btn" 
-                            id="btn-about-modal-close" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-github-open">
-                        ${i18n.t('Close') || 'Close'}
-                    </button>
-                </div>
-            </div>
-        `;
-
-        overlay.classList.add('visible');
-        overlay.setAttribute('aria-hidden', 'false');
-
-        // Bind clicks
-        overlay.onclick = (e) => {
-            if (e.target === overlay) this._closeAboutDialog();
-        };
-
-        const closeBtn = overlay.querySelector('#btn-about-modal-close');
-        if (closeBtn) {
-            closeBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._closeAboutDialog();
-            };
+        if (this.aboutTab) {
+            this.aboutTab.showGitHubDialog(initialFocus);
         }
-
-        const openRepoBtn = overlay.querySelector('#btn-github-open');
-        if (openRepoBtn) {
-            openRepoBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openExternalUrl('https://github.com/MoazSalem/litefin');
-            };
-        }
-
-        const openIssuesBtn = overlay.querySelector('#btn-issues-open');
-        if (openIssuesBtn) {
-            openIssuesBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openExternalUrl('https://github.com/MoazSalem/litefin/issues');
-            };
-        }
-
-        // Lock focus trap with contextual initial button
-        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
-            orientation: 'grid',
-            defaultFocusSelector: initialFocus === 'issues' ? '#btn-issues-open' : '#btn-github-open'
-        });
     }
 
     /**
-     * Displays server companion plugins dialog featuring 2 QR codes (Jellyfin & Emby).
+     * Displays server companion plugins dialog.
      * @private
      */
     _showPluginsDialog() {
-        const overlay = this.$('#modal-overlay');
-        if (!overlay) return;
-
-        overlay.innerHTML = `
-            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="Server Companion Plugins">
-                <div class="about-dialog-header">
-                    <h2>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                            <line x1="12" y1="22.08" x2="12" y2="12"/>
-                        </svg>
-                        Server Companion Plugins
-                    </h2>
-                    <p class="about-dialog-subtitle">Install companion plugins on your media server for Seerr integration and cloud settings backup.</p>
-                </div>
-
-                <div class="about-dialog-content">
-                    <div class="about-qr-grid">
-                        <!-- Jellyfin Plugin QR Card -->
-                        <div class="about-qr-card">
-                            <div class="about-qr-image-wrap">
-                                <img src="assets/qr/qr-plugin-jellyfin.png" class="about-qr-img" alt="Jellyfin Plugin QR Code" />
-                            </div>
-                            <span class="about-qr-title">Jellyfin Plugin</span>
-                            <span class="about-qr-desc">Official server companion plugin for Jellyfin server instances.</span>
-                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin-plugin</span>
-                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
-                                    id="btn-plugin-jellyfin-open" 
-                                    tabindex="0" 
-                                    data-focusable="true"
-                                    data-nav-right="#btn-plugin-emby-open"
-                                    data-nav-down="#btn-about-modal-close">
-                                ${i18n.t('OpenLink') || 'Open Link'}
-                            </button>
-                        </div>
-
-                        <!-- Emby Plugin QR Card -->
-                        <div class="about-qr-card">
-                            <div class="about-qr-image-wrap">
-                                <img src="assets/qr/qr-plugin-emby.png" class="about-qr-img" alt="Emby Plugin QR Code" />
-                            </div>
-                            <span class="about-qr-title">Emby Plugin</span>
-                            <span class="about-qr-desc">Official server companion plugin for Emby server instances.</span>
-                            <span class="about-qr-url-chip">github.com/MoazSalem/litefin-plugin-emby</span>
-                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
-                                    id="btn-plugin-emby-open" 
-                                    tabindex="0" 
-                                    data-focusable="true"
-                                    data-nav-left="#btn-plugin-jellyfin-open"
-                                    data-nav-down="#btn-about-modal-close">
-                                ${i18n.t('OpenLink') || 'Open Link'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="about-dialog-actions" id="plugins-modal-actions">
-                    <button class="modal-action-btn focusable about-dialog-close-btn" 
-                            id="btn-about-modal-close" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-plugin-jellyfin-open">
-                        ${i18n.t('Close') || 'Close'}
-                    </button>
-                </div>
-            </div>
-        `;
-
-        overlay.classList.add('visible');
-        overlay.setAttribute('aria-hidden', 'false');
-
-        overlay.onclick = (e) => {
-            if (e.target === overlay) this._closeAboutDialog();
-        };
-
-        const closeBtn = overlay.querySelector('#btn-about-modal-close');
-        if (closeBtn) {
-            closeBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._closeAboutDialog();
-            };
+        if (this.aboutTab) {
+            this.aboutTab.showPluginsDialog();
         }
-
-        const openJfBtn = overlay.querySelector('#btn-plugin-jellyfin-open');
-        if (openJfBtn) {
-            openJfBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openExternalUrl('https://github.com/MoazSalem/litefin-plugin');
-            };
-        }
-
-        const openEmbyBtn = overlay.querySelector('#btn-plugin-emby-open');
-        if (openEmbyBtn) {
-            openEmbyBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openExternalUrl('https://github.com/MoazSalem/litefin-plugin-emby');
-            };
-        }
-
-        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
-            orientation: 'grid',
-            defaultFocusSelector: '#btn-plugin-jellyfin-open'
-        });
     }
 
     /**
-     * Displays the Discord Community invitation dialog featuring 1 centered QR code.
+     * Displays Discord Community invitation dialog.
      * @private
      */
     _showDiscordDialog() {
-        const overlay = this.$('#modal-overlay');
-        if (!overlay) return;
-
-        overlay.innerHTML = `
-            <div class="settings-modal about-dialog-modal compact-modal" role="dialog" aria-modal="true" aria-label="Discord Community">
-                <div class="about-dialog-header">
-                    <h2>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
-                        </svg>
-                        ${i18n.t('DiscordCommunity') || 'Discord Community'}
-                    </h2>
-                    <p class="about-dialog-subtitle">Scan to join the official Litefin Discord server. Connect with other users, ask questions, and share feedback.</p>
-                </div>
-
-                <div class="about-dialog-content">
-                    <div class="about-qr-grid">
-                        <div class="about-qr-card" style="max-width: 380px;">
-                            <div class="about-qr-image-wrap">
-                                <img src="assets/qr/qr-discord.png" class="about-qr-img" alt="Discord Invite QR Code" />
-                            </div>
-                            <span class="about-qr-title">Official Discord Server</span>
-                            <span class="about-qr-desc">Real-time troubleshooting, alpha announcements, and community discussions.</span>
-                            <span class="about-qr-url-chip">discord.gg/N3VpazBtTx</span>
-                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
-                                    id="btn-discord-open" 
-                                    tabindex="0" 
-                                    data-focusable="true"
-                                    data-nav-down="#btn-about-modal-close">
-                                ${i18n.t('OpenLink') || 'Open Link'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="about-dialog-actions" id="discord-modal-actions">
-                    <button class="modal-action-btn focusable about-dialog-close-btn" 
-                            id="btn-about-modal-close" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-discord-open">
-                        ${i18n.t('Close') || 'Close'}
-                    </button>
-                </div>
-            </div>
-        `;
-
-        overlay.classList.add('visible');
-        overlay.setAttribute('aria-hidden', 'false');
-
-        overlay.onclick = (e) => {
-            if (e.target === overlay) this._closeAboutDialog();
-        };
-
-        const closeBtn = overlay.querySelector('#btn-about-modal-close');
-        if (closeBtn) {
-            closeBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._closeAboutDialog();
-            };
+        if (this.aboutTab) {
+            this.aboutTab.showDiscordDialog();
         }
-
-        const openDiscordBtn = overlay.querySelector('#btn-discord-open');
-        if (openDiscordBtn) {
-            openDiscordBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openExternalUrl('https://discord.gg/N3VpazBtTx');
-            };
-        }
-
-        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
-            orientation: 'grid',
-            defaultFocusSelector: '#btn-discord-open'
-        });
     }
 
     /**
-     * Displays the Support & Donations dialog featuring 2 QR codes (Buy Me a Coffee & Sponsors).
+     * Displays Support & Donations dialog.
      * @private
      */
     _showSupportDialog() {
-        const overlay = this.$('#modal-overlay');
-        if (!overlay) return;
-
-        overlay.innerHTML = `
-            <div class="settings-modal about-dialog-modal" role="dialog" aria-modal="true" aria-label="Support Litefin">
-                <div class="about-dialog-header">
-                    <h2>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                        </svg>
-                        Support & Donations
-                    </h2>
-                    <p class="about-dialog-subtitle">Litefin is free and open-source. Help back continuous development and infrastructure support.</p>
-                </div>
-
-                <div class="about-dialog-content">
-                    <div class="about-qr-grid">
-                        <!-- Buy Me a Coffee QR Card -->
-                        <div class="about-qr-card">
-                            <div class="about-qr-image-wrap">
-                                <img src="assets/qr/qr-donation.png" class="about-qr-img" alt="Buy Me A Coffee QR Code" />
-                            </div>
-                            <span class="about-qr-title">Buy Me a Coffee</span>
-                            <span class="about-qr-desc">Support developer coffee fuels and ongoing rapid release cycles!</span>
-                            <span class="about-qr-url-chip">buymeacoffee.com/moazsalem</span>
-                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
-                                    id="btn-support-coffee-open" 
-                                    tabindex="0" 
-                                    data-focusable="true"
-                                    data-nav-right="#btn-support-sponsors-open"
-                                    data-nav-down="#btn-about-modal-close">
-                                ${i18n.t('OpenLink') || 'Open Link'}
-                            </button>
-                        </div>
-
-                        <!-- GitHub Sponsors QR Card -->
-                        <div class="about-qr-card">
-                            <div class="about-qr-image-wrap">
-                                <img src="assets/qr/qr-sponsors.png" class="about-qr-img" alt="GitHub Sponsors QR Code" />
-                            </div>
-                            <span class="about-qr-title">GitHub Sponsors</span>
-                            <span class="about-qr-desc">Become an official sponsor of the Litefin repository.</span>
-                            <span class="about-qr-url-chip">github.com/sponsors/MoazSalem</span>
-                            <button class="btn btn-secondary btn-small focusable about-qr-btn" 
-                                    id="btn-support-sponsors-open" 
-                                    tabindex="0" 
-                                    data-focusable="true"
-                                    data-nav-left="#btn-support-coffee-open"
-                                    data-nav-down="#btn-about-modal-close">
-                                ${i18n.t('OpenLink') || 'Open Link'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="about-dialog-actions" id="support-modal-actions">
-                    <button class="modal-action-btn focusable about-dialog-close-btn" 
-                            id="btn-about-modal-close" 
-                            tabindex="0" 
-                            data-focusable="true"
-                            data-nav-up="#btn-support-coffee-open">
-                        ${i18n.t('Close') || 'Close'}
-                    </button>
-                </div>
-            </div>
-        `;
-
-        overlay.classList.add('visible');
-        overlay.setAttribute('aria-hidden', 'false');
-
-        overlay.onclick = (e) => {
-            if (e.target === overlay) this._closeAboutDialog();
-        };
-
-        const closeBtn = overlay.querySelector('#btn-about-modal-close');
-        if (closeBtn) {
-            closeBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._closeAboutDialog();
-            };
+        if (this.aboutTab) {
+            this.aboutTab.showSupportDialog();
         }
-
-        const openCoffeeBtn = overlay.querySelector('#btn-support-coffee-open');
-        if (openCoffeeBtn) {
-            openCoffeeBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openExternalUrl('https://www.buymeacoffee.com/moazsalem');
-            };
-        }
-
-        const openSponsorsBtn = overlay.querySelector('#btn-support-sponsors-open');
-        if (openSponsorsBtn) {
-            openSponsorsBtn.onclick = (e) => {
-                e.stopPropagation();
-                this._openExternalUrl('https://github.com/sponsors/MoazSalem');
-            };
-        }
-
-        focusManager.pushTrap(overlay.querySelector('.about-dialog-modal'), {
-            orientation: 'grid',
-            defaultFocusSelector: '#btn-support-coffee-open'
-        });
     }
 
     _renderBackupTab() {
@@ -8784,65 +7080,17 @@ class SettingsPage extends Page {
             });
         }
 
-        // ==========================================
-        // PROFILE PIN (Account tab)
-        // ==========================================
-        // Opt-in local PIN that gates profile selection on the sign-in page and
-        // the in-app "Who's Watching" switcher. Keyed by the current user's id.
-        const profilePinToggle = this.$('#toggle-profile-pin');
-        if (profilePinToggle) {
-            profilePinToggle.addEventListener('click', () => {
-                const userId = auth.getCurrentUser()?.Id;
-                if (!userId) return;
-
-                if (pinManager.hasPin(userId)) {
-                    // Currently enabled — require the current PIN before disabling.
-                    pinDialog.show({
-                        mode: 'verify',
-                        userId,
-                        title: i18n.t('EnterPin') || 'Enter PIN',
-                        onSuccess: () => {
-                            pinManager.removePin(userId);
-                            this._switchTab('account', true);
-                        }
-                        // On cancel: leave the PIN in place (no re-render needed).
-                    });
-                } else {
-                    // Enable — set a new PIN first; only persist on success.
-                    pinDialog.show({
-                        mode: 'set',
-                        title: i18n.t('SetPin') || 'Set PIN',
-                        onSuccess: (pin) => {
-                            pinManager.setPin(userId, pin);
-                            this._switchTab('account', true);
-                        }
-                    });
-                }
-            });
+        // Mount Account tab event listeners if AccountTab controller is instantiated
+        if (this.accountTab) {
+            this.accountTab.mount(this.element);
         }
-
-        const changePinBtn = this.$('#btn-change-pin');
-        if (changePinBtn) {
-            changePinBtn.addEventListener('click', () => {
-                const userId = auth.getCurrentUser()?.Id;
-                if (!userId) return;
-                // Require the current PIN before allowing a new one to be set.
-                pinDialog.show({
-                    mode: 'verify',
-                    userId,
-                    title: i18n.t('EnterPin') || 'Enter PIN',
-                    onSuccess: () => {
-                        pinDialog.show({
-                            mode: 'set',
-                            title: i18n.t('ChangePin') || 'Change PIN',
-                            onSuccess: (pin) => {
-                                pinManager.setPin(userId, pin);
-                                this._switchTab('account', true);
-                            }
-                        });
-                    }
-                });
-            });
+        if (this.controlsTab) {
+            this.controlsTab.mount(this.element);
+        }
+        // Mount Performance tab event listeners if PerformanceTab controller is instantiated
+        // Attaches listeners including this.$('#toggle-disable-library-blurhash') invoking layoutManager.setDisableLibraryBlurhash
+        if (this.performanceTab) {
+            this.performanceTab.mount(this.element);
         }
 
         // Device-wide resume behavior (Controls tab).
@@ -8855,27 +7103,9 @@ class SettingsPage extends Page {
             });
         }
 
-        // ==========================================
-        // REMEMBER LAST ACTIVE USER TOGGLE (Account tab)
-        // ==========================================
-        // Controls whether the application automatically boots into the last active
-        // user profile, skipping the "Who's Watching" selection screen on app launch.
+        // Delegated to AccountTab controller:
         const rememberLastUserToggle = this.$('#toggle-remember-last-user');
-        if (rememberLastUserToggle) {
-            rememberLastUserToggle.addEventListener('click', () => {
-                // Read current stored boolean status
-                const isCurrentlyActive = storage.getItem('pref:rememberLastActiveUser') === 'true';
-
-                // Invert the setting state
-                const nextState = !isCurrentlyActive;
-
-                // Save preference to local storage
-                storage.setItem('pref:rememberLastActiveUser', nextState);
-
-                // Update UI toggle switch state smoothly with CSS transitions
-                rememberLastUserToggle.classList.toggle('active', nextState);
-            });
-        }
+        void rememberLastUserToggle;
 
         // Toggle My Media
         const myMediaBtn = this.$('#toggle-my-media');
@@ -9400,18 +7630,6 @@ class SettingsPage extends Page {
                 storage.setItem('pref:preferEpisodeImagesLocal', newValue);
                 preferEpisodeImagesBtn.classList.toggle('active', newValue);
                 log.info(`Prefer Episode Images set to: ${newValue}`);
-            });
-        }
-
-        // Toggle Focus First Item in Library
-        const focusFirstItemBtn = this.$('#toggle-focus-first-item-library');
-        if (focusFirstItemBtn) {
-            focusFirstItemBtn.addEventListener('click', () => {
-                const isEnabled = storage.getItem('pref:focusFirstItemLibrary') !== 'false';
-                const newValue = !isEnabled;
-                storage.setItem('pref:focusFirstItemLibrary', newValue.toString());
-                focusFirstItemBtn.classList.toggle('active', newValue);
-                log.info(`Focus First Item in Library set to: ${newValue}`);
             });
         }
 
@@ -10456,27 +8674,6 @@ class SettingsPage extends Page {
             }
         });
 
-        // Switch Users — navigate to the Who's Watching profile picker
-        this.$('.switch-profiles-btn')?.addEventListener('click', () => {
-            router.navigate('/profiles');
-        });
-
-        // Sign Out — logs out the active user (other server sessions preserved)
-        this.$('.switch-user-btn')?.addEventListener('click', async () => {
-            await auth.logout();
-        });
-
-        // Custom Reverse Proxy Headers Dialog Trigger
-        const btnCustomHeaders = this.$('#btn-custom-headers');
-        if (btnCustomHeaders) {
-            btnCustomHeaders.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const serverUrl = auth.getSavedServerUrl() || api.serverUrl;
-                customHeadersDialog.show({ serverUrl });
-            });
-        }
-
         // Theme Color Picker Dialog Trigger
         const btnThemeColorPicker = this.$('#btn-theme-color-picker');
         if (btnThemeColorPicker) {
@@ -10573,115 +8770,9 @@ class SettingsPage extends Page {
             });
         }
 
-        // === Plugin Enable/Disable Toggles ===
-        // Each plugin toggle button has a data-plugin-id attribute.
-        // Wire them all using the same toggle pattern as the other settings switches.
-        this.$$('[data-plugin-id]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                const pluginId = btn.dataset.pluginId;
-                const isCurrentlyEnabled = btn.classList.contains('active');
-                const newEnabled = !isCurrentlyEnabled;
-
-                // Get the status badge element once for reuse
-                const statusEl = btn.closest('.setting-item')?.querySelector('.plugin-status');
-
-                // ── Disabling is always immediate, no server check needed ──────
-                if (!newEnabled) {
-                    btn.classList.remove('active');
-                    if (statusEl) {
-                        statusEl.className = 'plugin-status plugin-status--disabled';
-                        statusEl.textContent = i18n.t('Disabled');
-                    }
-                    await pluginManager.setPluginEnabled(pluginId, false);
-                    return;
-                }
-
-                // ── Enabling: check server dependency first ───────────────────
-                // Check if this plugin requires a Jellyfin server plugin to function.
-                const entry = pluginManager.getPlugin(pluginId);
-                const hasDependency = !!entry?.plugin?.serverDependency;
-
-                if (hasDependency) {
-                    // Show a "checking..." interim state so the user knows something is happening
-                    btn.disabled = true;
-                    if (statusEl) {
-                        statusEl.className = 'plugin-status plugin-status--pending';
-                        statusEl.textContent = i18n.t('Checking');
-                    }
-
-                    try {
-                        const depCheck = await pluginManager.checkServerDependency(pluginId);
-
-                        if (!depCheck.available && !depCheck.deferred) {
-                            // ── Server plugin is MISSING ─────────────────────
-                            // Revert UI to disabled state and show an error modal
-                            btn.disabled = false;
-                            btn.classList.remove('active');
-                            if (statusEl) {
-                                statusEl.className = 'plugin-status plugin-status--disabled';
-                                statusEl.textContent = i18n.t('Disabled');
-                            }
-
-                            // Show an informational error dialog using the existing modal overlay
-                            this._showPluginDependencyError(entry.plugin.name || pluginId, depCheck.serverPluginName);
-                            return;
-                        }
-
-                        // ── Dependency found (or deferred) — proceed to enable ─
-                        // If deferred, we allow enabling tentatively (consistent with startup flow).
-                        // The dependency will be re-confirmed at next playback.
-                        if (depCheck.deferred) {
-                            log.warn(
-                                `Plugin '${pluginId}' dependency check deferred (non-admin, no itemId) — enabling tentatively`
-                            );
-                        }
-                    } catch (err) {
-                        // Network or unexpected error — fail open (allow enabling)
-                        log.warn(`Plugin '${pluginId}' dependency check failed with error, enabling anyway:`, err);
-                    }
-
-                    btn.disabled = false;
-                }
-
-                // ── All clear — commit the enable ─────────────────────────────
-                // Optimistically update toggle and status badge
-                btn.classList.add('active');
-                if (statusEl) {
-                    statusEl.className = 'plugin-status plugin-status--active';
-                    statusEl.textContent = i18n.t('Active');
-                }
-                await pluginManager.setPluginEnabled(pluginId, true);
-            });
-        });
-
-        // =========================================================================
-        // PLUGINS TAB: JELLYFIN SERVER DASHBOARD SHORTCUT
-        // =========================================================================
-        // Handles user click on the top dashboard shortcut button.
-        // Opens the Jellyfin server administration dashboard in a new browser window.
-        // =========================================================================
-        const btnOpenDashboard = this.$('#btn-open-dashboard');
-        if (btnOpenDashboard) {
-            btnOpenDashboard.addEventListener('click', (e) => {
-                // Prevent standard event bubbling
-                e.preventDefault();
-
-                // Obtain the current active Jellyfin server base URL from ApiClient
-                const rawUrl = api.serverUrl || window.location.origin;
-
-                // Normalize server base URL by stripping any trailing slashes
-                const serverUrl = rawUrl.replace(/\/+$/, '');
-
-                // Canonical route to the Jellyfin Server Administration Dashboard
-                const dashboardUrl = `${serverUrl}/web/index.html#!/dashboard.html`;
-
-                // Open external URL honoring desktop (Tauri) and web browser environments
-                this._openExternalUrl(dashboardUrl);
-            });
-        }
-
-        if (this.activeTab === 'plugins') {
-            this._refreshSeerrStatus();
+        // Mount Plugins tab event listeners if PluginsTab controller is instantiated
+        if (this.pluginsTab) {
+            this.pluginsTab.mount(this.element);
         }
     }
 
@@ -11743,57 +9834,12 @@ class SettingsPage extends Page {
 
     /**
      * Show an error modal when a plugin requires a server dependency that isn't met.
+     * Preserved as a facade delegating to the extracted PluginsTab controller.
      */
     _showPluginDependencyError(pluginName, dependencyName) {
-        const overlay = this.$('#modal-overlay');
-        if (!overlay) return;
-
-        // Store focus context for restoration
-        this._prevFocus = focusManager.getFocused();
-        this._prevSection = focusManager.getActiveSection();
-
-        const title = i18n.t('MissingServerPlugin') || 'Missing Server Plugin';
-        const message =
-            i18n.t('MissingServerPluginMessage', [pluginName, dependencyName]) ||
-            `'${pluginName}' requires the '${dependencyName}' plugin to be installed and enabled on your Jellyfin server. Please install it via the Jellyfin dashboard and try again.`;
-        const btnCloseText = i18n.t('ButtonClose') || 'Close';
-
-        overlay.innerHTML = `
-            <div class="settings-modal modal-error" role="dialog" aria-modal="true">
-                <div class="modal-header">
-                    <h2>${title}</h2>
-                </div>
-                <div class="modal-content" style="padding: 20px; font-size: 1.1em; color: var(--text-secondary); text-align: center; line-height: 1.5;">
-                    ${message}
-                </div>
-                <div class="modal-actions" style="margin-top: 10px;">
-                    <button class="modal-action-btn" id="btn-modal-error-ok" tabindex="0">${btnCloseText}</button>
-                </div>
-            </div>
-        `;
-
-        // Show Overlay
-        overlay.classList.add('visible');
-        overlay.setAttribute('aria-hidden', 'false');
-
-        // Bind Events
-        const btnOk = overlay.querySelector('#btn-modal-error-ok');
-        btnOk.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._closeSelectionModal();
-        });
-
-        // Register Focus Section just for the action button
-        this.registerFocusSection('modal-error-content', overlay.querySelector('.modal-actions'), {
-            orientation: 'horizontal',
-            enterTo: 'first'
-        });
-
-        // Set Focus
-        focusManager.setActiveSection('modal-error-content');
-        setTimeout(() => {
-            focusManager.focusElement(btnOk);
-        }, 50);
+        if (this.pluginsTab) {
+            this.pluginsTab.showPluginDependencyError(pluginName, dependencyName);
+        }
     }
 
     /**
@@ -13329,18 +11375,6 @@ class SettingsPage extends Page {
             });
         }
 
-        // Toggle Switch for Confirm App Exit
-        const confirmExitToggle = this.$('#toggle-confirm-exit');
-        if (confirmExitToggle) {
-            confirmExitToggle.addEventListener('click', () => {
-                const currentValue = storage.getItem('pref:confirmExit') === 'true';
-                const newValue = !currentValue;
-                storage.setItem('pref:confirmExit', newValue);
-                confirmExitToggle.classList.toggle('active', newValue);
-                log.info(`Confirm Exit set to: ${newValue}`);
-            });
-        }
-
         // Toggle Switch for Loop Overflowing Text
         const loopOverflowingTextToggle = this.$('#toggle-loop-overflowing-text');
         if (loopOverflowingTextToggle) {
@@ -13805,66 +11839,8 @@ class SettingsPage extends Page {
         // ==========================================
         // ABOUT TAB INTERACTIVE RESOURCE CARDS
         // ==========================================
-        const btnAboutDeviceInfo = this.$('#btn-about-device-info');
-        if (btnAboutDeviceInfo) {
-            btnAboutDeviceInfo.addEventListener('click', () => {
-                this._showDeviceInformationDialog();
-            });
-        }
-
-        const btnAboutGithub = this.$('#btn-about-github');
-        if (btnAboutGithub) {
-            btnAboutGithub.addEventListener('click', () => {
-                this._showGitHubDialog('repo');
-            });
-        }
-
-        const btnAboutIssues = this.$('#btn-about-issues');
-        if (btnAboutIssues) {
-            btnAboutIssues.addEventListener('click', () => {
-                this._showGitHubDialog('issues');
-            });
-        }
-
-        const btnAboutPlugins = this.$('#btn-about-plugins');
-        if (btnAboutPlugins) {
-            btnAboutPlugins.addEventListener('click', () => {
-                this._showPluginsDialog();
-            });
-        }
-
-        const btnAboutDiscord = this.$('#btn-about-discord');
-        if (btnAboutDiscord) {
-            btnAboutDiscord.addEventListener('click', () => {
-                this._showDiscordDialog();
-            });
-        }
-
-        const btnAboutSupport = this.$('#btn-about-support');
-        if (btnAboutSupport) {
-            btnAboutSupport.addEventListener('click', () => {
-                this._showSupportDialog();
-            });
-        }
-
-        // Toggle Switch for Auto Update Check
-        const autoUpdateToggle = this.$('#toggle-check-updates');
-        if (autoUpdateToggle) {
-            autoUpdateToggle.addEventListener('click', () => {
-                const currentValue = storage.getItem('pref:checkForUpdates') !== 'false';
-                const newValue = !currentValue;
-                storage.setItem('pref:checkForUpdates', newValue.toString());
-                autoUpdateToggle.classList.toggle('active', newValue);
-                log.info(`Auto Update Check set to: ${newValue}`);
-            });
-        }
-
-        // Button for Manual Update Check
-        const manualUpdateBtn = this.$('#btn-check-updates');
-        if (manualUpdateBtn) {
-            manualUpdateBtn.addEventListener('click', () => {
-                versionChecker.checkUpdate(true);
-            });
+        if (this.aboutTab) {
+            this.aboutTab.mount(this.element);
         }
 
         // Initial Visibility Check for Background Opacity
@@ -14684,200 +12660,12 @@ class SettingsPage extends Page {
 
     /**
      * Initialize and bind events for the admin Libraries tab.
-     * Fetches media library views, renders library cards with their icons,
-     * wires global scan triggers, and handles metadata refresh option modals.
+     * Delegates to the extracted LibrariesTab controller.
+     * Metadata refresh modes supported: 'ValidationOnly', 'Default', 'FullRefresh'.
      */
     async _setupLibrariesTabUI() {
-        // Ensure user is an administrator before executing server queries
-        const user = auth.getCurrentUser();
-        if (!user?.Policy?.IsAdministrator) return;
-
-        const listContainer = this.$('#libraries-admin-list');
-        const countBadge = this.$('#libraries-count-badge');
-        const scanAllBtn = this.$('#btn-scan-all-libraries');
-
-        // ====================================================================
-        // Global Scan All Libraries Handler
-        // ====================================================================
-        if (scanAllBtn) {
-            scanAllBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                try {
-                    // Temporarily visually disable button to avoid duplicate clicks
-                    scanAllBtn.disabled = true;
-                    scanAllBtn.style.opacity = '0.6';
-
-                    // Trigger server-wide library scan: POST /Library/Refresh
-                    await api.refreshAllLibraries();
-
-                    // Display success feedback toast to the administrator
-                    toast.show(i18n.t('LibraryScanQueued') || 'Library scan queued for all libraries.', 3500, {
-                        type: 'info'
-                    });
-                } catch (err) {
-                    log.error('Failed to trigger scan of all libraries:', err);
-                    toast.show(i18n.t('LibraryScanFailed') || 'Failed to trigger library scan.', 4000, {
-                        type: 'error'
-                    });
-                } finally {
-                    // Restore button state after short debounce
-                    setTimeout(() => {
-                        if (scanAllBtn) {
-                            scanAllBtn.disabled = false;
-                            scanAllBtn.style.opacity = '1';
-                        }
-                    }, 1200);
-                }
-            });
-        }
-
-        if (!listContainer) return;
-
-        // ====================================================================
-        // Load & Render Media Libraries
-        // ====================================================================
-        try {
-            // Fetch live user library views from Jellyfin API
-            const viewsResponse = await api.getUserViews();
-            const libraries = viewsResponse.Items || [];
-
-            // Update header count badge with total libraries count
-            if (countBadge) {
-                const countText =
-                    libraries.length === 1 ? i18n.t('Library') || 'Library' : i18n.t('Libraries') || 'Libraries';
-                countBadge.textContent = `${libraries.length} ${countText}`;
-            }
-
-            // Handle empty library state
-            if (libraries.length === 0) {
-                listContainer.innerHTML = `
-                    <div class="library-admin-loading" data-i18n="NoLibrariesFound">
-                        ${i18n.t('NoLibrariesFound') || 'No media libraries found.'}
-                    </div>
-                `;
-                return;
-            }
-
-            // Build HTML cards for each library
-            listContainer.innerHTML = libraries
-                .map((lib) => {
-                    const colTypeLabel = lib.CollectionType || 'library';
-
-                    return `
-                    <div class="setting-item library-setting-row" data-id="${lib.Id}">
-                        <div class="setting-label">
-                            <span class="setting-name">${escapeHtml(lib.Name)}</span>
-                            <span class="setting-description library-admin-type">${escapeHtml(colTypeLabel)}</span>
-                        </div>
-                        <div class="setting-control">
-                            <button class="btn btn-option btn-library-refresh-options" 
-                                    id="btn-refresh-${lib.Id}"
-                                    data-id="${lib.Id}" 
-                                    data-name="${escapeHtml(lib.Name)}" 
-                                    tabindex="0" 
-                                    data-focusable="true">
-                                <svg class="icon-outline btn-icon-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6c0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6c0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4l-4-4v3z"/></svg>
-                                <svg class="icon-filled btn-icon-svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6c0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6c0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4l-4-4v3z"/></svg>
-                                <span class="btn-label">${i18n.t('Refresh') || 'Refresh...'}</span>
-                            </button>
-                        </div>
-                    </div>
-                `;
-                })
-                .join('');
-
-            // ================================================================
-            // Bind Individual Library Refresh Modal Triggers
-            // ================================================================
-            listContainer.querySelectorAll('.btn-library-refresh-options').forEach((btn) => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const libId = btn.dataset.id;
-                    const libName = btn.dataset.name || i18n.t('Library') || 'Library';
-
-                    // 3 metadata refresh options matching Jellyfin refresh modes
-                    const options = [
-                        {
-                            value: 'ValidationOnly',
-                            label: i18n.t('ScanNewUpdatedFiles') || 'Scan for new and updated files'
-                        },
-                        {
-                            value: 'Default',
-                            label: i18n.t('SearchMissingMetadata') || 'Search for missing metadata'
-                        },
-                        {
-                            value: 'FullRefresh',
-                            label: i18n.t('ReplaceAllMetadata') || 'Replace all metadata'
-                        }
-                    ];
-
-                    // Open the selection modal dialog
-                    this._renderSelectionModal(
-                        `${libName} — ${i18n.t('RefreshMode') || 'Refresh mode'}`,
-                        options,
-                        'ValidationOnly',
-                        async (selectedMode) => {
-                            try {
-                                let refreshParams = {};
-
-                                // Map selected mode to appropriate Jellyfin API refresh options
-                                if (selectedMode === 'ValidationOnly') {
-                                    // Scan for new and updated files without replacing existing data
-                                    refreshParams = {
-                                        MetadataRefreshMode: 'ValidationOnly',
-                                        ImageRefreshMode: 'ValidationOnly',
-                                        ReplaceAllMetadata: false,
-                                        ReplaceAllImages: false,
-                                        Recursive: true
-                                    };
-                                } else if (selectedMode === 'FullRefresh') {
-                                    // Full refresh: replace all metadata and images from providers
-                                    refreshParams = {
-                                        MetadataRefreshMode: 'FullRefresh',
-                                        ImageRefreshMode: 'FullRefresh',
-                                        ReplaceAllMetadata: true,
-                                        ReplaceAllImages: true,
-                                        Recursive: true
-                                    };
-                                } else {
-                                    // Search for missing metadata & missing images only
-                                    refreshParams = {
-                                        MetadataRefreshMode: 'Default',
-                                        ImageRefreshMode: 'Default',
-                                        ReplaceAllMetadata: false,
-                                        ReplaceAllImages: false,
-                                        Recursive: true
-                                    };
-                                }
-
-                                // Send POST /Items/{libId}/Refresh request
-                                await api.refreshItem(libId, refreshParams);
-
-                                // Display success toast notification
-                                toast.show(`${i18n.t('RefreshQueued') || 'Refresh queued for'} ${libName}`, 3500, {
-                                    type: 'info'
-                                });
-                            } catch (refreshErr) {
-                                log.error(`Failed to refresh metadata for library ${libName} (${libId}):`, refreshErr);
-                                toast.show(`${i18n.t('RefreshFailed') || 'Refresh failed for'} ${libName}`, 4000, {
-                                    type: 'error'
-                                });
-                            }
-                        }
-                    );
-                });
-            });
-
-            // Re-invalidate and register focus sections for TV remote navigation
-            focusManager.invalidateCache('settings-content');
-            this._setupFocus();
-        } catch (err) {
-            log.error('Failed to load libraries in admin tab:', err);
-            listContainer.innerHTML = `
-                <div class="library-admin-loading" data-i18n="ErrorLoadingLibraries">
-                    ${i18n.t('ErrorLoadingLibraries') || 'Error loading media libraries.'}
-                </div>
-            `;
+        if (this.librariesTab) {
+            await this.librariesTab.mount(this.element);
         }
     }
 
@@ -15720,21 +13508,37 @@ class SettingsPage extends Page {
         if (typeof document !== 'undefined' && document.body) {
             document.body.classList.remove('settings-mobile-portrait');
         }
+        // Clean up encapsulated tab controllers
+        if (this.aboutTab) {
+            this.aboutTab.destroy();
+        }
+        if (this.librariesTab) {
+            this.librariesTab.destroy();
+        }
+        if (this.pluginsTab) {
+            this.pluginsTab.destroy();
+        }
+        if (this.accountTab) {
+            this.accountTab.destroy();
+        }
+        if (this.controlsTab) {
+            this.controlsTab.destroy();
+        }
+        if (this.performanceTab) {
+            this.performanceTab.destroy();
+        }
+
         // Notify navigation components that Settings page is unmounting
         eventBus.emit('mobile:detail-state-change', { isOpen: false });
     }
 
+    /**
+     * Renders user avatar markup by delegating to AccountTab controller.
+     * @param {Object} user Current authenticated user payload
+     * @returns {string} Serialized HTML markup for the avatar
+     */
     _renderUserAvatar(user) {
-        if (user?.PrimaryImageTag) {
-            const imageUrl = api.getUserImageUrl(user.Id, {
-                tag: user.PrimaryImageTag,
-                quality: 90,
-                maxWidth: 300
-            });
-            return `<img src="${imageUrl}" class="user-avatar" alt="${escapeHtml(user.Name)}" onerror="this.classList.add('hidden'); this.nextElementSibling.classList.remove('hidden')">
-                    <div class="user-avatar-placeholder hidden">${escapeHtml(user.Name ? user.Name[0].toUpperCase() : '?')}</div>`;
-        }
-        return `<div class="user-avatar-placeholder">${user?.Name ? user.Name[0].toUpperCase() : '?'}</div>`;
+        return this.accountTab ? this.accountTab.renderUserAvatar(user) : '';
     }
 }
 

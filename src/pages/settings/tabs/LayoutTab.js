@@ -328,10 +328,12 @@ export class LayoutTab {
      * @param {HTMLElement} root The settings content container
      */
     mount(root) {
-        if (!root) return;
+        const container = root || this.page?.el || this.page?.element || document;
+        if (!container) return;
+        this.destroy();
 
         // Wire generic data-storage toggle switches
-        const storageToggles = root.querySelectorAll('.toggle-switch[data-storage]');
+        const storageToggles = container.querySelectorAll('.toggle-switch[data-storage]');
         storageToggles.forEach((btn) => {
             this._listen(btn, 'click', () => {
                 const storageKey = btn.dataset.storage;
@@ -346,7 +348,7 @@ export class LayoutTab {
         });
 
         // Wire generic data-setting toggle switches (PlayerSettings)
-        const playerToggles = root.querySelectorAll('.toggle-switch[data-setting]');
+        const playerToggles = container.querySelectorAll('.toggle-switch[data-setting]');
         playerToggles.forEach((btn) => {
             this._listen(btn, 'click', () => {
                 const settingKey = btn.dataset.setting;

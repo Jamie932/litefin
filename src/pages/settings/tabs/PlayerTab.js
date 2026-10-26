@@ -301,11 +301,13 @@ export class PlayerTab {
      * @param {HTMLElement} root The settings content container
      */
     mount(root) {
-        if (!root) return;
-        const $ = (sel) => root.querySelector(sel);
+        const container = root || this.page?.el || this.page?.element || document;
+        if (!container) return;
+        this.destroy();
+        const $ = (sel) => container.querySelector(sel);
 
         // Wire all data-setting toggle switches
-        const toggles = root.querySelectorAll('.toggle-switch[data-setting]');
+        const toggles = container.querySelectorAll('.toggle-switch[data-setting]');
         toggles.forEach((btn) => {
             this._listen(btn, 'click', () => {
                 const settingKey = btn.dataset.setting;

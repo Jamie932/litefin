@@ -271,8 +271,10 @@ export class SubtitlesTab {
      * @param {HTMLElement} root Root settings container element
      */
     mount(root) {
-        if (!root) return;
-        const $ = (selector) => root.querySelector(selector);
+        const container = root || this.page?.el || this.page?.element || document;
+        if (!container) return;
+        this.destroy();
+        const $ = (selector) => container.querySelector(selector);
 
         // Subtitle OSD Dodging Toggle (Smart Shift)
         const osdDodgingBtn = $('#subtitle-osd-dodging-toggle');

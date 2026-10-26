@@ -14,6 +14,7 @@
 import { i18n } from '../../../utils/i18n.js';
 import { storage } from '../../../utils/StorageService.js';
 import { layoutManager } from '../../../ui/LayoutManager.js';
+import { focusManager } from '../../../ui/FocusManager.js';
 import { languageManager } from '../../../utils/LanguageManager.js';
 import { platformInfo } from '../../../utils/PlatformInfo.js';
 import { androidAdapter } from '../../../android/AndroidAdapter.js';
@@ -290,11 +291,13 @@ export class AppearanceTab {
      * @param {HTMLElement} root The settings content container
      */
     mount(root) {
-        if (!root) return;
+        const container = root || this.page?.el || this.page?.element || document;
+        if (!container) return;
+        this.destroy();
         log.debug('Mounting AppearanceTab event listeners');
 
         // Wire generic data-storage toggle switches
-        const storageToggles = root.querySelectorAll('.toggle-switch[data-storage]');
+        const storageToggles = container.querySelectorAll('.toggle-switch[data-storage]');
         storageToggles.forEach((btn) => {
             this._listen(btn, 'click', () => {
                 const storageKey = btn.dataset.storage;
@@ -305,11 +308,27 @@ export class AppearanceTab {
                 storage.setItem(storageKey, String(nextVal));
                 btn.classList.toggle('active', nextVal);
                 log.info(`Appearance storage setting changed: ${storageKey} = ${nextVal}`);
+
+                // Synchronize dependent UI rows on WOL or theme song changes
+                if (storageKey.startsWith('pref:enableWol')) {
+                    const wolActive = ['Startup', 'Timeout', 'ServerScan', 'ExtendedWait'].some(
+                        (k) => storage.getItem(`pref:enableWolOn${k}`) === 'true' || storage.getItem('pref:enableWolExtendedWait') === 'true'
+                    );
+                    const macContainer = container.querySelector('#wol-mac-container');
+                    if (macContainer) macContainer.style.display = wolActive ? '' : 'none';
+                    focusManager.invalidateCache('settings-content');
+                } else if (storageKey === 'pref:playThemeSongs') {
+                    const songOnce = container.querySelector('#theme-song-once-item');
+                    const songVol = container.querySelector('#theme-song-volume-item');
+                    if (songOnce) songOnce.style.display = nextVal ? '' : 'none';
+                    if (songVol) songVol.style.display = nextVal ? '' : 'none';
+                    focusManager.invalidateCache('settings-content');
+                }
             });
         });
 
         // Wire generic data-setting toggle switches (PlayerSettings)
-        const playerToggles = root.querySelectorAll('.toggle-switch[data-setting]');
+        const playerToggles = container.querySelectorAll('.toggle-switch[data-setting]');
         playerToggles.forEach((btn) => {
             this._listen(btn, 'click', () => {
                 const settingKey = btn.dataset.setting;
@@ -317,7 +336,30 @@ export class AppearanceTab {
                 PlayerSettings.set(settingKey, nextVal);
                 btn.classList.toggle('active', nextVal);
                 log.info(`Appearance player setting changed: ${settingKey} = ${nextVal}`);
+
+                if (settingKey === 'osdShowLogo') {
+                    const logoContainer = container.querySelector('#osd-logo-size-container');
+                    if (logoContainer) logoContainer.style.display = nextVal ? '' : 'none';
+                    focusManager.invalidateCache('settings-content');
+                }
             });
+        });
+
+        // LayoutManager theme and styling switches
+        [
+            ['#toggle-lighter-background', () => layoutManager.getLighterBackground(), (v) => layoutManager.setLighterBackground(v)],
+            ['#toggle-signature-accent', () => layoutManager.getSignatureAccent(), (v) => layoutManager.setSignatureAccent(v)],
+            ['#toggle-hide-unfocused-borders', () => layoutManager.getHideUnfocusedBorders(), (v) => layoutManager.setHideUnfocusedBorders(v)],
+            ['#toggle-rounded-corners', () => layoutManager.getRoundedCorners(), (v) => layoutManager.setRoundedCorners(v)]
+        ].forEach(([sel, getter, setter]) => {
+            const btn = container.querySelector(sel);
+            if (btn) {
+                this._listen(btn, 'click', () => {
+                    const next = !getter();
+                    setter(next);
+                    btn.classList.toggle('active', next);
+                });
+            }
         });
     }
 
@@ -325,18 +367,14 @@ export class AppearanceTab {
      * Updates visibility of lighter background option based on active theme.
      */
     updateLighterBackgroundVisibility() {
-        if (this.page && typeof this.page._updateLighterBackgroundVisibility === 'function') {
-            this.page._updateLighterBackgroundVisibility();
-        }
+        this.page?._updateLighterBackgroundVisibility?.();
     }
 
     /**
      * Updates visibility of signature accent option based on active theme.
      */
     updateSignatureAccentVisibility() {
-        if (this.page && typeof this.page._updateSignatureAccentVisibility === 'function') {
-            this.page._updateSignatureAccentVisibility();
-        }
+        this.page?._updateSignatureAccentVisibility?.();
     }
 
     /**

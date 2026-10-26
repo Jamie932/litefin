@@ -138,6 +138,15 @@ class SettingsPage extends Page {
     }
 
     /**
+     * Root DOM element of the settings page.
+     * Aliases this.el for tab controller mount compatibility.
+     * @returns {HTMLElement|null}
+     */
+    get element() {
+        return this.el || (typeof document !== 'undefined' ? document.getElementById('settings-page') : null);
+    }
+
+    /**
      * Determines whether the settings interface is viewed in a portrait orientation.
      * Aligns directly with CSS @media (orientation: portrait) rules.
      * @returns {boolean} True if in portrait mode
@@ -561,41 +570,42 @@ class SettingsPage extends Page {
             });
         });
 
-        // Mount Account tab event listeners if AccountTab controller is instantiated
+        // Mount tab event listeners with the active root element
+        const root = this.element || document;
         if (this.accountTab) {
-            this.accountTab.mount(this.element);
+            this.accountTab.mount(root);
         }
         if (this.controlsTab) {
-            this.controlsTab.mount(this.element);
+            this.controlsTab.mount(root);
         }
         // Mount Performance tab event listeners if PerformanceTab controller is instantiated
         // Attaches listeners including this.$('#toggle-disable-library-blurhash') invoking layoutManager.setDisableLibraryBlurhash
         if (this.performanceTab) {
-            this.performanceTab.mount(this.element);
+            this.performanceTab.mount(root);
         }
         if (this.debugTab) {
-            this.debugTab.mount(this.element);
+            this.debugTab.mount(root);
         }
         if (this.backupTab) {
-            this.backupTab.mount(this.element);
+            this.backupTab.mount(root);
         }
         if (this.homeTab) {
-            this.homeTab.mount(this.element);
+            this.homeTab.mount(root);
         }
         if (this.sidebarTab) {
-            this.sidebarTab.mount(this.element);
+            this.sidebarTab.mount(root);
         }
         if (this.subtitlesTab) {
-            this.subtitlesTab.mount(this.element);
+            this.subtitlesTab.mount(root);
         }
         if (this.playerTab) {
-            this.playerTab.mount(this.element);
+            this.playerTab.mount(root);
         }
         if (this.layoutTab) {
-            this.layoutTab.mount(this.element);
+            this.layoutTab.mount(root);
         }
         if (this.appearanceTab) {
-            this.appearanceTab.mount(this.element);
+            this.appearanceTab.mount(root);
         }
 
         // Device-wide resume behavior (Controls tab).

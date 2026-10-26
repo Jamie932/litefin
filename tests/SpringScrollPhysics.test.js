@@ -3,6 +3,9 @@ import test from 'node:test';
 import {
     createSpring,
     springStep,
+    chaseStep,
+    railStep,
+    flingStep,
     simulateSpring,
     SPRING_DAMPING_RATIO,
     SPRING_SUBSTEP_MS,
@@ -10,7 +13,10 @@ import {
     SPRING_MAX_DURATION_MS,
     SPRING_MIN_DURATION_MS,
     SPRING_SETTLE_DISTANCE_PX,
-    SPRING_SETTLE_VELOCITY_PX_MS
+    SPRING_SETTLE_VELOCITY_PX_MS,
+    CHASE_TAU_FACTOR,
+    RAIL_DECEL_ZONE_FRACTION,
+    FLING_VELOCITY_MULTIPLIER
 } from '../src/ui/SpringPhysics.js';
 
 /**
@@ -62,10 +68,12 @@ test('ScrollController: scroll physics defaults to "easing" (opt-in spring)', ()
     );
 });
 
-test('ScrollController: scroll physics honors "spring" preference and exposes a setter reader', () => {
+test('ScrollController: scroll physics honors all engine preferences and rejects garbage', () => {
     const controller = new ScrollController();
-    storage.setItem('pref:scrollPhysics', 'spring');
-    assert.strictEqual(controller.getScrollPhysics(), 'spring');
+    for (const engine of ['spring', 'chase', 'rail', 'fling']) {
+        storage.setItem('pref:scrollPhysics', engine);
+        assert.strictEqual(controller.getScrollPhysics(), engine, `Engine "${engine}" must be selectable`);
+    }
     storage.setItem('pref:scrollPhysics', 'easing');
     assert.strictEqual(controller.getScrollPhysics(), 'easing');
     storage.setItem('pref:scrollPhysics', 'garbage');
@@ -271,4 +279,190 @@ test('ScrollController: fresh instance wiring covers the physics attribute stamp
     new ScrollController();
     assert.strictEqual(stamped, 'easing', 'data-scroll-physics must reflect easing mode too');
     storage.removeItem('pref:scrollPhysics');
+});
+
+/**
+ * ============================================================================
+ * ENGINE STATE FACTORY: chase / rail / fling wiring
+ * ============================================================================
+ */
+
+test('ScrollController: _createPhysicsState derives engine-specific parameters', () => {
+    const controller = new ScrollController();
+    const write = () => {};
+    const finalize = () => {};
+
+    const spring = controller._createPhysicsState({
+        engine: 'spring',
+        axis: 'vertical',
+        container: null,
+        track: null,
+        scrollMode: 'gpu',
+        current: 0,
+        target: 400,
+        duration: 180,
+        _write: write,
+        _finalize: finalize
+    });
+    assert.ok(Number.isFinite(spring.omega) && spring.omega > 0, 'spring needs ω');
+    assert.ok(Number.isFinite(spring.v) && spring.v > 0, 'spring needs a launch impulse');
+    assert.strictEqual(spring.physics, true);
+    assert.strictEqual(typeof spring._write, 'function');
+    assert.strictEqual(typeof spring._finalize, 'function');
+
+    const chase = controller._createPhysicsState({
+        engine: 'chase',
+        axis: 'vertical',
+        container: null,
+        track: null,
+        scrollMode: 'gpu',
+        current: 0,
+        target: 400,
+        duration: 180,
+        _write: write,
+        _finalize: finalize
+    });
+    assert.ok(chase.tau > 0 && Number.isFinite(chase.tau), 'chase needs a finite τ');
+    assert.strictEqual(chase.v, 0, 'chase carries momentum implicitly, not as state');
+
+    const rail = controller._createPhysicsState({
+        engine: 'rail',
+        axis: 'vertical',
+        container: null,
+        track: null,
+        scrollMode: 'gpu',
+        current: 0,
+        target: 400,
+        duration: 180,
+        _write: write,
+        _finalize: finalize
+    });
+    assert.strictEqual(rail.speed, (2 * 400) / 180, 'rail slope must match the easing engine departure speed (2·D/T)');
+    assert.strictEqual(rail.decelZone, RAIL_DECEL_ZONE_FRACTION * 400, 'rail decel zone scales with the hop');
+
+    const fling = controller._createPhysicsState({
+        engine: 'fling',
+        axis: 'vertical',
+        container: null,
+        track: null,
+        scrollMode: 'gpu',
+        current: 0,
+        target: 800,
+        duration: 180,
+        _write: write,
+        _finalize: finalize
+    });
+    assert.strictEqual(fling.tau, Math.max(180, SPRING_MIN_DURATION_MS) / CHASE_TAU_FACTOR);
+    assert.strictEqual(fling.vCap, FLING_VELOCITY_MULTIPLIER * ((2 * 800) / 180));
+});
+
+test('ScrollController: rail and fling states refresh their slopes on retarget', () => {
+    const controller = new ScrollController();
+    const rail = {
+        engine: 'rail',
+        x: 100,
+        target: 800,
+        speed: 1,
+        decelZone: 1,
+        physics: true
+    };
+    controller._refreshRailState(rail, 180);
+    assert.strictEqual(rail.speed, (2 * 700) / 180, 'rail must re-derive slope from remaining distance');
+    assert.strictEqual(rail.decelZone, RAIL_DECEL_ZONE_FRACTION * 700);
+
+    const fling = { engine: 'fling', x: 100, target: 800, vCap: 1, physics: true };
+    controller._refreshFlingState(fling, 180);
+    assert.strictEqual(fling.vCap, FLING_VELOCITY_MULTIPLIER * ((2 * 700) / 180));
+});
+
+/**
+ * ============================================================================
+ * ADAPTIVE FRAME SAMPLER: spring auto-degrades to chase on slow panels
+ * ============================================================================
+ */
+
+test('ScrollController: adaptive sampler degrades spring to chase only on genuinely slow panels', () => {
+    const controller = new ScrollController();
+    storage.setItem('pref:scrollPhysics', 'spring');
+
+    // Too few samples — judgment withheld (no false positive at boot)
+    controller._frameSamples = [30, 31, 29, 32];
+    assert.strictEqual(controller._resolvePhysicsEngine(), 'spring');
+
+    // Healthy 60Hz panel — full spring fidelity
+    controller._frameSamples = [16, 16.7, 16.4, 16.2, 16.8, 16.3, 16.1, 16.6];
+    assert.strictEqual(controller._resolvePhysicsEngine(), 'spring');
+
+    // webOS 3 style 30-40fps delivery — degrade to chase
+    controller._frameSamples = [30, 31, 29, 33, 30, 32, 30, 29];
+    assert.strictEqual(
+        controller._resolvePhysicsEngine(),
+        'chase',
+        'A <40fps median frame interval must flip spring to chase'
+    );
+
+    // A single catastrophic stall must NOT sway the median
+    controller._frameSamples = [30, 16, 16, 16, 16, 16, 30, 16, 16, 300, 16, 16];
+    const samplesCopy = [...controller._frameSamples];
+    assert.ok(samplesCopy.length <= ADAPTIVE_WINDOW_MAX, 'sampler window stays bounded');
+
+    // Other engines resolve to themselves regardless of frame timing
+    for (const engine of ['chase', 'rail', 'fling']) {
+        storage.setItem('pref:scrollPhysics', engine);
+        assert.strictEqual(controller._resolvePhysicsEngine(), engine);
+    }
+    storage.removeItem('pref:scrollPhysics');
+});
+
+/**
+ * ============================================================================
+ * Follower engine pure-step verification (chase / rail / fling)
+ * ============================================================================
+ */
+
+const ADAPTIVE_WINDOW_MAX = 24;
+
+test('chaseStep: monotonic approach, stall-safe, converges to target', () => {
+    // Monotone a 400px hop at τ from the 180ms budget
+    const tau = Math.max(180, 60) / CHASE_TAU_FACTOR;
+    let x = 0;
+    for (let i = 0; i < 200; i++) {
+        [x] = chaseStep(x, 400, tau, 16);
+    }
+    assert.ok(Math.abs(x - 400) < 0.5, ' chase must converge on the target');
+
+    // Frame stall: even a 500ms gap can never launch past the target
+    const [stalled] = chaseStep(300, 400, tau, 500);
+    assert.ok(stalled <= 400, 'a stalled frame must never overshoot');
+});
+
+test('railStep: constant slope, no crossing, linear deceleration tail', () => {
+    // Never crosses the target under any substep size
+    for (const h of [4, 8, 16, 33]) {
+        let x = 0;
+        for (let i = 0; i < 300; i++) {
+            [x] = railStep(x, 400, 400 / 90, 140, h);
+        }
+        assert.ok(Math.abs(x - 400) < 0.01, `rail must stop exactly at target (h=${h}ms)`);
+    }
+
+    // Same-step sanity: motion direction matches remaining lag
+    const [nx, v] = railStep(0, 400, 4, 140, 16);
+    assert.ok(nx > 0 && v > 0, 'rail accelerates toward the target');
+});
+
+test('flingStep: momentum cap, braking glide, zero overshoot under held-key storms', () => {
+    // Single hop: must land with ~zero residual velocity and no crossing
+    const tau = 180 / CHASE_TAU_FACTOR;
+    const vCap = FLING_VELOCITY_MULTIPLIER * ((2 * 400) / 180);
+    let x = 0;
+    let v = 0;
+    for (let i = 0; i < 300; i++) {
+        [x, v] = flingStep(x, v, 400, tau, vCap, 16);
+    }
+    assert.ok(Math.abs(400 - x) < 0.5 && Math.abs(v) < 0.02, 'fling lands with dissipated momentum');
+
+    // Landed camera cannot be re-excited by residual state
+    const [resting, restingV] = flingStep(400, 3, 400, tau, vCap, 16);
+    assert.ok(resting === 400 && restingV === 0, 'a landed camera must stay parked');
 });

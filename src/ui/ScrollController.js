@@ -27,10 +27,19 @@ import { platformInfo } from '../utils/PlatformInfo.js';
 import {
     createSpring,
     springStep,
+    chaseStep,
+    railStep,
+    flingStep,
+    normalizeScrollPhysics,
     SPRING_SUBSTEP_MS,
     SPRING_SETTLE_DISTANCE_PX,
     SPRING_SETTLE_VELOCITY_PX_MS,
-    SPRING_MAX_DURATION_MS
+    SPRING_MAX_DURATION_MS,
+    SPRING_MIN_DURATION_MS,
+    CHASE_TAU_FACTOR,
+    RAIL_DECEL_ZONE_FRACTION,
+    FLING_VELOCITY_MULTIPLIER,
+    PHYSICS_SETTLE_DISTANCE_PX
 } from './SpringPhysics.js';
 
 // ============================================================================
@@ -104,6 +113,35 @@ const TALL_ROW_MULTIPLIER = 2.0;
 // compositor layers), causing visible frame drops. Instant-snapping large deltas
 const LARGE_SCROLL_SNAP_FRACTION = 0.45;
 
+// ============================================================================
+// ADAPTIVE PHYSICS SAMPLING (webOS 3 / low-tier hardware)
+// ============================================================================
+// Physics engines are frame-rate normalized, but their *character* degrades
+// when panel frame delivery is slow: the spring engine's crisp per-substep
+// envelope turns into stutter when rAF intervals swing past ~24ms (webOS 3
+// routinely drops to 30-40fps under image loads). While spring physics is
+// active the controller measures rolling rAF intervals; a slow median flips
+// the engine to CHASE, whose single-exponential update is inherently immune
+// to frame jank (see chaseStep's stall-safety guarantee).
+// ============================================================================
+
+// Cap for a *calibrated* rAF interval sample. Samples past this are genuine
+// stalls (tab hidden, GC pause) and would poison the median — reject them.
+const ADAPTIVE_SAMPLE_REJECT_MAX_MS = 500;
+
+// Rolling sample window (frames) for the median frame-interval measurement.
+const ADAPTIVE_SAMPLE_WINDOW = 24;
+
+// Minimum samples before degradation judgments are trusted (~0.4s of scroll).
+const ADAPTIVE_MIN_SAMPLES = 6;
+
+// Median rAF interval above which the panel is treated as frame-time starved.
+// 24ms ≈ <40fps — the point where the spring's crispness visibly degrades.
+const ADAPTIVE_FRAME_TARGET_MS = 24;
+
+// All scroll physics engines recognized by getScrollPhysics() live in
+// SpringPhysics.js (SCROLL_PHYSICS_ENGINES / normalizeScrollPhysics).
+
 class ScrollController {
     constructor() {
         // ====================================================================
@@ -170,12 +208,21 @@ class ScrollController {
         // --------------------------------------------------------------------
         this._applyScrollPhysics(this.getScrollPhysics());
         eventBus.on('pref:scrollPhysics', (physics) => {
-            // Reset both axis engines so an in-flight easing animation never
-            // blends with (or fight) a newly activated spring integrator.
+            // Reset both axis engines so an in-flight animation never
+            // blends two different physics models.
             this.cancelAnimation('vertical');
             this.cancelAnimation('horizontal');
-            this._applyScrollPhysics(physics === 'spring' ? 'spring' : 'easing');
+            this._applyScrollPhysics(physics === 'easing' ? 'easing' : physics);
         });
+
+        // --------------------------------------------------------------------
+        // ADAPTIVE FRAME SAMPLER
+        // --------------------------------------------------------------------
+        // Rolling log of recent rAF intervals (ms). Populated by the physics
+        // loop every animated frame; decides whether the spring engine should
+        // degrade to CHASE on frame-time-starved panels (webOS 3 et al).
+        // --------------------------------------------------------------------
+        this._frameSamples = [];
     }
 
     /**
@@ -273,29 +320,76 @@ class ScrollController {
     }
 
     /**
-     * Resolves the active scroll physics engine from stored preferences.
-     * Supported options:
+     * Resolves the active scroll physics engine from stored preferences via
+     * the shared SpringPhysics normalizer (same rules as TouchHorizontalScroller
+     * and the settings dropdown). Supported options:
      * - 'easing' (default): Classic time-based easeOutQuad curves.
-     * - 'spring': Apple-style velocity-driven damped spring motion with
-     *   momentum continuity across retargets and a soft damped settle.
+     * - 'spring': Critically-damped velocity physics (Apple TV glide).
+     * - 'chase': First-order exponential camera follower (continuous chase).
+     * - 'rail': Constant-velocity travel with a linear deceleration tail.
+     * - 'fling': Momentum sweep with friction-glide landing.
      *
-     * @returns {'easing'|'spring'} Active scroll physics engine
+     * @returns {'easing'|'spring'|'chase'|'rail'|'fling'} Active physics engine
      */
     getScrollPhysics() {
-        return storage.getItem('pref:scrollPhysics') === 'spring' ? 'spring' : 'easing';
+        return normalizeScrollPhysics(storage.getItem('pref:scrollPhysics'));
     }
 
     /**
      * Stamped onto document.documentElement so stylesheets can disable CSS
-     * transition rules that would fight JS-driven spring transform writes.
+     * transition rules that would fight JS-driven physics transform writes.
      *
-     * @param {'easing'|'spring'} physics
+     * @param {'easing'|'spring'|'chase'|'rail'|'fling'} physics
      * @private
      */
     _applyScrollPhysics(physics) {
         if (typeof document?.documentElement?.setAttribute === 'function') {
             document.documentElement.setAttribute('data-scroll-physics', physics);
         }
+    }
+
+    /**
+     * Records one raw rAF interval (ms) into the adaptive sampler.
+     * @param {number} deltaMs
+     * @private
+     */
+    _recordFrameDelta(deltaMs) {
+        this._frameSamples.push(deltaMs);
+        if (this._frameSamples.length > ADAPTIVE_SAMPLE_WINDOW) {
+            this._frameSamples.shift();
+        }
+    }
+
+    /**
+     * Decides whether the panel's frame delivery is too slow for the spring
+     * engine's crisp per-substep envelope. Uses the median of the rolling
+     * rAF-interval sampler so single outliers never trigger the fallback.
+     *
+     * @returns {boolean} True when median frame time exceeds ADAPTIVE_FRAME_TARGET_MS
+     * @private
+     */
+    _isFrameTimingDegraded() {
+        const samples = this._frameSamples;
+        if (samples.length < ADAPTIVE_MIN_SAMPLES) return false;
+        const sorted = [...samples].sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length / 2)] > ADAPTIVE_FRAME_TARGET_MS;
+    }
+
+    /**
+     * Resolves the physics engine to actually integrate with. The Apple TV
+     * spring auto-degrades to CHASE when the frame sampler detects a slow
+     * panel: a follower update is a single exponential, perfectly stable at
+     * any frame interval, so jank reads as mild slowness instead of stutter.
+     *
+     * @returns {'spring'|'chase'|'rail'|'fling'}
+     * @private
+     */
+    _resolvePhysicsEngine() {
+        const pref = this.getScrollPhysics();
+        if (pref === 'spring' && this._isFrameTimingDegraded()) {
+            return 'chase';
+        }
+        return pref;
     }
 
     /**
@@ -619,15 +713,15 @@ class ScrollController {
         }
 
         /* ====================================================================
-         * APPLE-STYLE SPRING PHYSICS ENGINE (OPT-IN)
+         * 🍏 SCROLL PHYSICS ENGINES (OPT-IN)
          * ====================================================================
-         * When pref:scrollPhysics === 'spring', the hop is delegated to the
-         * velocity-driven damped spring integrator below instead of the
-         * time-based easing loop. Everything above this point (instant snap,
-         * GPU track setup, dynamic duration scaling for long leaps) applies
-         * identically to both engines.
+         * When pref:scrollPhysics is set, the hop is delegated to the
+         * velocity-driven engine integrators (spring / chase / rail / fling)
+         * instead of the time-based easing loop. Everything above this point
+         * (instant snap, GPU track setup, dynamic duration scaling for long
+         * leaps) applies identically to all engines.
          * ==================================================================== */
-        if (this.getScrollPhysics() === 'spring') {
+        if (this.getScrollPhysics() !== 'easing') {
             this._springScrollTo({
                 stateKey,
                 animIdKey,
@@ -880,24 +974,27 @@ class ScrollController {
 
         if (existing && existing.physics) {
             if (Math.abs(existing.target - targetScroll) < SCROLL_SNAP_THRESHOLD) {
-                // Unchanged destination — let the in-flight spring finish.
+                // Unchanged destination — let the in-flight engine finish.
                 return;
             }
             // VELOCITY CONTINUITY: re-aim without touching current (x, v).
             // Fresh settle budget so long re-aims aren't cut by the timeout.
             existing.target = targetScroll;
             existing.startTime = null;
+            // Rail/fling derive their speed from remaining distance — refresh.
+            if (existing.engine === 'rail') {
+                this._refreshRailState(existing, duration);
+            } else if (existing.engine === 'fling') {
+                this._refreshFlingState(existing, duration);
+            }
             return;
         }
         // Switching engines mid-flight: cleanly stop the old easing loop
-        // before the spring takes over the axis state slot.
+        // before the physics engine takes over the axis state slot.
         if (existing && this[animIdKey]) {
             cancelAnimationFrame(this[animIdKey]);
             this[animIdKey] = null;
         }
-
-        const distance = targetScroll - currentScroll;
-        const { omega, zeta, v0 } = createSpring(distance, duration);
 
         // ----------------------------------------------------------------
         // Axis write strategy — mirrors the easing engine exactly:
@@ -954,23 +1051,18 @@ class ScrollController {
             };
         }
 
-        this[stateKey] = {
+        this[stateKey] = this._createPhysicsState({
+            engine: this._resolvePhysicsEngine(),
+            axis: isVertical ? 'vertical' : 'horizontal',
             container,
             track,
-            axis: isVertical ? 'vertical' : 'horizontal',
             scrollMode,
-            omega,
-            zeta,
-            x: currentScroll,
-            v: v0,
+            current: currentScroll,
             target: targetScroll,
-            startTime: null,
-            lastFrameTime: null,
-            elapsed: 0,
-            physics: true,
+            duration,
             _write: write,
             _finalize: finalize
-        };
+        });
 
         this._runSpringLoop(stateKey, animIdKey);
     }
@@ -978,10 +1070,10 @@ class ScrollController {
     /**
      * Apple-style spring for the horizontal GPU compositor track
      * (.row-items-track). Used by scrollIntoView when horizontal scroll mode
-     * is 'gpu' and spring physics is enabled — CSS cubic-bezier transitions
-     * cannot reproduce an underdamped spring, so the JS integrator drives the
-     * transform per frame instead (data-scroll-physics="spring" disables the
-     * CSS transition for exactly this reason).
+     * is 'gpu' and physics is enabled — CSS cubic-bezier transitions cannot
+     * reproduce a spring/follower, so the JS integrator drives the transform
+     * per frame instead (data-scroll-physics disables the CSS transition for
+     * exactly this reason).
      *
      * Reuses the horizontal axis state slot so cancelAnimation, isAnimating
      * and scroll:finished behave identically to every other engine.
@@ -1003,6 +1095,11 @@ class ScrollController {
             }
             existing.target = targetX;
             existing.startTime = null;
+            if (existing.engine === 'rail') {
+                this._refreshRailState(existing, SCROLL_DURATION_HORIZONTAL);
+            } else if (existing.engine === 'fling') {
+                this._refreshFlingState(existing, SCROLL_DURATION_HORIZONTAL);
+            }
             return;
         }
         if (existing && this[animIdKey]) {
@@ -1010,24 +1107,17 @@ class ScrollController {
             this[animIdKey] = null;
         }
 
-        const { omega, zeta, v0 } = createSpring(targetX - currentX, SCROLL_DURATION_HORIZONTAL);
-
         const transformFor = (value) => (isRtl ? `translate3d(${value}px, 0, 0)` : `translate3d(-${value}px, 0, 0)`);
 
-        this[stateKey] = {
+        this[stateKey] = this._createPhysicsState({
+            engine: this._resolvePhysicsEngine(),
+            axis: 'horizontal',
             container: track,
             track,
-            axis: 'horizontal',
             scrollMode: 'gpu',
-            omega,
-            zeta,
-            x: currentX,
-            v: v0,
+            current: currentX,
             target: targetX,
-            startTime: null,
-            lastFrameTime: null,
-            elapsed: 0,
-            physics: true,
+            duration: SCROLL_DURATION_HORIZONTAL,
             _write: (value) => {
                 const transformStr = transformFor(value);
                 track.style.webkitTransform = transformStr;
@@ -1038,14 +1128,113 @@ class ScrollController {
                 track.style.webkitTransform = transformStr;
                 track.style.transform = transformStr;
             }
-        };
+        });
 
         this._runSpringLoop(stateKey, animIdKey);
     }
 
     /**
-     * Shared RAF driver for both spring axes. Integrates with fixed ≤8ms
-     * substeps and delegates per-frame writes to the state's _write closure.
+     * Builds the physics state for whichever engine was resolved. Shared by
+     * all integration surfaces (vertical GPU/native, horizontal native, and
+     * the horizontal GPU track) so every engine behaves identically on both
+     * axes. Rail and fling derive their speed budgets from the hop distance
+     * and duration preference; chase derives τ; spring derives ω/ζ/v₀.
+     *
+     * @param {Object} o
+     * @param {'spring'|'chase'|'rail'|'fling'} o.engine - Resolved engine
+     * @param {'vertical'|'horizontal'} o.axis - Motion axis
+     * @param {HTMLElement} o.container - Scrollable container (or track)
+     * @param {HTMLElement|null} o.track - GPU compositor track (or null)
+     * @param {string} o.scrollMode - Active axis scroll mode
+     * @param {number} o.current - Current scroll position, px
+     * @param {number} o.target - Target scroll position, px
+     * @param {number} o.duration - Settle budget from duration preference, ms
+     * @param {Function} o._write - Per-frame position writer
+     * @param {Function} o._finalize - Target snap on completion
+     * @returns {Object} Physics state consumed by _runSpringLoop
+     * @private
+     */
+    _createPhysicsState({ engine, axis, container, track, scrollMode, current, target, duration, _write, _finalize }) {
+        const distance = target - current;
+        const durationFloor = Math.max(duration || 0, SPRING_MIN_DURATION_MS);
+        const base = {
+            physics: true,
+            engine,
+            axis,
+            container,
+            track,
+            scrollMode,
+            x: current,
+            v: 0,
+            target,
+            startTime: null,
+            lastFrameTime: null,
+            elapsed: 0,
+            _write,
+            _finalize
+        };
+
+        if (engine === 'chase') {
+            // One exponential per frame; τ from the duration preference.
+            return { ...base, tau: durationFloor / CHASE_TAU_FACTOR };
+        }
+        if (engine === 'rail') {
+            // Constant-velocity slope matched to the easing engine's initial
+            // departure speed (2·D/T), with a linear deceleration tail.
+            const dist = Math.abs(distance);
+            return {
+                ...base,
+                speed: (2 * dist) / durationFloor,
+                decelZone: RAIL_DECEL_ZONE_FRACTION * dist
+            };
+        }
+        if (engine === 'fling') {
+            // Momentum sweep: velocity-capped follower. The launch speed
+            // ceiling derives from the hop so distant targets sweep faster.
+            const dist = Math.abs(distance);
+            return {
+                ...base,
+                tau: durationFloor / CHASE_TAU_FACTOR,
+                vCap: Math.max(FLING_VELOCITY_MULTIPLIER * ((2 * dist) / durationFloor), 0.3)
+            };
+        }
+        // Default: critically damped spring (Apple TV).
+        const { omega, zeta, v0 } = createSpring(distance, durationFloor);
+        return { ...base, omega, zeta, v: v0 };
+    }
+
+    /**
+     * Recomputes rail speed parameters after a mid-flight retarget (the
+     * remaining distance changed, so the fixed slope must re-derive).
+     * @param {Object} state - Rail physics state
+     * @param {number} duration - Settle budget, ms
+     * @private
+     */
+    _refreshRailState(state, duration) {
+        const dist = Math.abs(state.target - state.x);
+        state.speed = (2 * dist) / Math.max(duration || 0, SPRING_MIN_DURATION_MS);
+        state.decelZone = RAIL_DECEL_ZONE_FRACTION * dist;
+    }
+
+    /**
+     * Recomputes fling momentum ceiling after a mid-flight retarget.
+     * @param {Object} state - Fling physics state
+     * @param {number} duration - Settle budget, ms
+     * @private
+     */
+    _refreshFlingState(state, duration) {
+        const dist = Math.abs(state.target - state.x);
+        state.vCap = Math.max(
+            FLING_VELOCITY_MULTIPLIER * ((2 * dist) / Math.max(duration || 0, SPRING_MIN_DURATION_MS)),
+            0.3
+        );
+    }
+
+    /**
+     * Shared RAF driver for every physics axis. Integrates the engine with
+     * fixed substeps (8ms for the spring's second-order integrator, 16ms for
+     * the follower engines), records frame deltas into the adaptive sampler,
+     * and delegates per-frame writes to the state's _write closure.
      *
      * @param {string} stateKey - Axis state slot
      * @param {string} animIdKey - Axis RAF id slot
@@ -1065,13 +1254,20 @@ class ScrollController {
                 s.startTime = time;
             }
 
-            // Clamp frame deltas (tab stalls) but keep global elapsed real.
-            let dt = Math.min(time - s.lastFrameTime, 64);
+            // Adaptive sampling: feed the RAW interval before clamping, but
+            // reject genuine stalls (hidden tab) from poisoning the median.
+            const rawDelta = time - s.lastFrameTime;
             s.lastFrameTime = time;
+            if (rawDelta > 0 && rawDelta < ADAPTIVE_SAMPLE_REJECT_MAX_MS) {
+                this._recordFrameDelta(rawDelta);
+            }
+
+            // Clamp frame deltas (tab stalls) but keep global elapsed real.
+            let dt = Math.min(rawDelta, 64);
 
             while (dt > 0) {
-                const h = Math.min(dt, SPRING_SUBSTEP_MS);
-                const [nx, nv] = springStep(s.x, s.v, s.target, s.omega, s.zeta, h);
+                const h = Math.min(dt, s.engine === 'spring' ? SPRING_SUBSTEP_MS : 16);
+                const [nx, nv] = this._advancePhysics(s, h);
                 s.x = nx;
                 s.v = nv;
                 dt -= h;
@@ -1079,8 +1275,7 @@ class ScrollController {
             s.elapsed = time - s.startTime;
             s._write(s.x);
 
-            const settled =
-                Math.abs(s.target - s.x) < SPRING_SETTLE_DISTANCE_PX && Math.abs(s.v) < SPRING_SETTLE_VELOCITY_PX_MS;
+            const settled = this._isPhysicsSettled(s);
 
             if (settled || s.elapsed >= SPRING_MAX_DURATION_MS) {
                 s._finalize(s.target);
@@ -1094,6 +1289,47 @@ class ScrollController {
         };
 
         this[animIdKey] = requestAnimationFrame(animate);
+    }
+
+    /**
+     * One integration substep for the state's active engine.
+     * @param {Object} s - Physics state
+     * @param {number} h - Substep duration, ms
+     * @returns {[number, number]} New [x, v]
+     * @private
+     */
+    _advancePhysics(s, h) {
+        switch (s.engine) {
+            case 'chase':
+                return chaseStep(s.x, s.target, s.tau, h);
+            case 'rail':
+                return railStep(s.x, s.target, s.speed, s.decelZone, h);
+            case 'fling':
+                return flingStep(s.x, s.v, s.target, s.tau, s.vCap, h);
+            default:
+                return springStep(s.x, s.v, s.target, s.omega, s.zeta, h);
+        }
+    }
+
+    /**
+     * Engine-specific settle criterion. The spring requires velocity and
+     * distance convergence; chase/rail settle on distance alone (their
+     * crossing guards guarantee no residual motion); fling also waits for
+     * its momentum to dissipate.
+     *
+     * @param {Object} s - Physics state
+     * @returns {boolean}
+     * @private
+     */
+    _isPhysicsSettled(s) {
+        const dx = Math.abs(s.target - s.x);
+        if (s.engine === 'spring') {
+            return dx < SPRING_SETTLE_DISTANCE_PX && Math.abs(s.v) < SPRING_SETTLE_VELOCITY_PX_MS;
+        }
+        if (s.engine === 'fling') {
+            return dx < PHYSICS_SETTLE_DISTANCE_PX && Math.abs(s.v) < SPRING_SETTLE_VELOCITY_PX_MS;
+        }
+        return dx < PHYSICS_SETTLE_DISTANCE_PX;
     }
 
     /**
@@ -1763,15 +1999,15 @@ class ScrollController {
                             const match = currentTransform.match(/translate3d\(\s*-?([\d.]+)(?:px|%)?/);
                             const currentTransformX = match ? parseFloat(match[1]) : 0;
 
-                            if (this.getScrollPhysics() === 'spring') {
+                            if (this.getScrollPhysics() !== 'easing') {
                                 // =========================================================
-                                // APPLE-STYLE SPRING (GPU COMPOSITED TRACK)
+                                // SCROLL PHYSICS (GPU COMPOSITED TRACK)
                                 // =========================================================
-                                // CSS cubic-bezier transitions cannot express an
-                                // underdamped spring, so the JS integrator drives
+                                // CSS cubic-bezier transitions cannot express a
+                                // spring or follower, so the JS integrator drives
                                 // per-frame transform writes. The CSS transition
-                                // on .row-items-track is disabled while spring
-                                // physics is active (data-scroll-physics="spring").
+                                // on .row-items-track is disabled while physics
+                                // is active (data-scroll-physics on <html>).
                                 // =========================================================
                                 this._springTrackHorizontal(track, finalScrollLeft, currentTransformX, isRtl);
                             } else if (Math.abs(currentTransformX - finalScrollLeft) >= SCROLL_SNAP_THRESHOLD) {

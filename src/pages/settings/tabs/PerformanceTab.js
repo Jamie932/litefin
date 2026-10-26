@@ -126,12 +126,15 @@ export class PerformanceTab {
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label"><span class="setting-name" data-i18n="ScrollPhysics">${i18n.t('ScrollPhysics') || 'Scroll Physics Engine'}</span><span class="setting-description" data-i18n="ScrollPhysicsDescription">${i18n.t('ScrollPhysicsDescription') || 'Velocity-based scrolling with a momentum glide and a smooth, bounce-free Apple TV settle. Disable to keep the classic easing curves.'}</span></div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="ScrollPhysics">${i18n.t('ScrollPhysics') || 'Scroll Physics Engine'}</span><span class="setting-description" data-i18n="ScrollPhysicsDescription">${i18n.t('ScrollPhysicsDescription') || 'Velocity-based scroll motion. Spring is the Apple TV glide; Chase and Rail are tuned for slower TV panels (webOS 3 era); Fling adds a momentum sweep. Disable for the classic easing curves.'}</span></div>
                     <div class="setting-control">${this._renderDropdown(
                         'scroll-physics-select',
                         [
                             { value: 'easing', label: i18n.t('ScrollPhysicsEasing') || 'Classic Easing (Default)' },
-                            { value: 'spring', label: i18n.t('ScrollPhysicsSpring') || 'Spring (Apple TV)' }
+                            { value: 'spring', label: i18n.t('ScrollPhysicsSpring') || 'Spring (Apple TV)' },
+                            { value: 'chase', label: i18n.t('ScrollPhysicsChase') || 'Chase (Continuous Follow)' },
+                            { value: 'rail', label: i18n.t('ScrollPhysicsRail') || 'Rail (Constant Velocity)' },
+                            { value: 'fling', label: i18n.t('ScrollPhysicsFling') || 'Fling (Momentum Sweep)' }
                         ],
                         scrollPhysics
                     )}</div>

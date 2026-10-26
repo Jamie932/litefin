@@ -2,26 +2,17 @@
  * ============================================================================
  * Litefin - SpringPhysics
  * ============================================================================
- * Apple-style (iOS) scroll physics: a linear damped harmonic oscillator
+ * Scroll physics engines (pure, dependency-free functions only):
  *
- *     x'' = ω²·(target − x) − 2ζω·x'
+ *   1. SPRING   — critically damped harmonic oscillator (Apple TV style)
+ *                 x'' = ω²·(target − x) − 2ζω·x'
+ *   2. CHASE    — first-order exponential follower (continuous camera)
+ *                 x' = (target − x)/τ
+ *   3. RAIL     — constant-velocity travel with a linear deceleration tail
+ *   4. FLING    — momentum sweep: velocity-capped follower with ramp-up
  *
- * Unlike the classic time-based easeOutQuad engine in ScrollController, this
- * model is velocity-driven. The camera holds a real velocity that carries
- * across retargeting keypresses (held D-pad navigation) and glides down into
- * a critically-damped, asymptotic stop — the smooth Apple TV (tvOS) scroll
- * character, with **no overshoot and no bounce**.
- *
- * Terminology (block: undefined at runtime, pure functions only):
- *   ω (omega) — natural frequency, rad/ms
- *   ζ  (zeta) — damping ratio. ζ = 1 is critically damped (no overshoot),
- *               ζ < 1 is underdamped (springy settle).
- *   v0        — initial velocity, px/ms, injected at spring start so short
- *               hops launch with the same outgoing velocity as the old
- *               easeOutQuad engine (slope 2 at t=0 → v0 = 2·D/T).
- *
- * All values are tuned for TV D-pad navigation (130–340ms hop budgets) and
- * verified numerically in tests/SpringScrollPhysics.test.js.
+ * All engines are velocity/time-driven and frame-rate normalized, so a
+ * 30fps webOS 3 panel gets the same trajectory shape as a 120Hz panel.
  * ============================================================================
  */
 
@@ -51,6 +42,43 @@ export const SPRING_DAMPING_RATIO = 1.0;
  * across the hop grid, always ≤ ~2.3× the duration budget).
  */
 export const SPRING_FREQUENCY_FACTOR = 5.0;
+
+/**
+ * Chase (continuous follower) time constant factor. τ = T / factor where T
+ * is the duration preference budget. The camera closes (target − x) with an
+ * exponential envelope; settle needs ~ln(2·D/0.5px) · τ, so factor 3.2 puts
+ * a 400px/180ms hop at ~380ms — same territory as the spring engine.
+ */
+export const CHASE_TAU_FACTOR = 3.2;
+
+/**
+ * Rail (constant velocity) deceleration zone as a fraction of the hop
+ * distance. The camera holds a fixed px/ms speed for the first (1 − zone)
+ * of the hop, then ramps speed linearly to zero across the last zone.
+ */
+export const RAIL_DECEL_ZONE_FRACTION = 0.35;
+
+/**
+ * Fling (momentum sweep) maximum camera velocity as a multiple of the launch
+ * speed v0 = 2·D/T. During held navigation the camera ramps velocity up to
+ * this ceiling (falling further behind the focus — the "frantic sweep" feel)
+ * and decays back down exponentially after the last keypress.
+ */
+export const FLING_VELOCITY_MULTIPLIER = 1.45;
+
+/**
+ * Fling ramp-up time constant (ms): how quickly engine velocity chases the
+ * desired velocity. Small values feel twitchy, large values feel floaty.
+ */
+export const FLING_RAMP_TAU_MS = 45;
+
+/**
+ * Fling braking deceleration (px/ms²). Constrains the desired velocity to
+ * `sqrt(2·a·lag)` so the engine always carries enough stopping distance to
+ * glide into the target with zero residual speed — friction-glide landing,
+ * no hard stops, no crossing.
+ */
+export const FLING_BRAKE_DECEL_PX_MS2 = 0.04;
 
 /**
  * Minimum duration (ms) used for deriving the spring's natural frequency.
@@ -83,6 +111,13 @@ export const SPRING_SUBSTEP_MS = 8;
  */
 export const SPRING_SETTLE_DISTANCE_PX = 0.3;
 export const SPRING_SETTLE_VELOCITY_PX_MS = 0.015;
+
+/**
+ * Settle distance (px) shared by the CHASE / RAIL / FLING engines. These
+ * engines have no velocity-based stop criterion to satisfy, so their settle
+ * is distance-only (0.5px is far below any display's effective resolution).
+ */
+export const PHYSICS_SETTLE_DISTANCE_PX = 0.5;
 
 /**
  * Absolute animation timeout (ms). Safety net for pathological retarget
@@ -186,4 +221,144 @@ export function simulateSpring(x0, target, durationMs, maxDurationMs = SPRING_MA
         overshootRatio: overPx / hopDist,
         settled
     };
+}
+
+/**
+ * ============================================================================
+ * CHASE — first-order exponential follower (continuous camera)
+ * ============================================================================
+ * The camera continuously converges on the target: x' = (target − x)/τ.
+ *
+ * Properties that matter on weak hardware (webOS 3):
+ *   - ONE exponential per frame — cheaper than every other non-trivial engine.
+ *   - Frame-time normalized: identical trajectory shape at 30 or 120 Hz.
+ *   - Frame-stall proof: (1 − e^(−dt/τ)) saturates at 1, so a dropped frame
+ *     can never explode the position (it just lands exactly on target).
+ *   - Retarget-free by construction: there is no "animation" to restart;
+ *     smoothScrollTo simply re-aims the shared target.
+ *
+ * @param {number} x - Camera position, px
+ * @param {number} target - Target position, px
+ * @param {number} tau - Convergence time constant, ms
+ * @param {number} dt - Timestep, ms (guarded against 0)
+ * @returns {[number, number]} New [x, instantaneous velocity px/ms]
+ */
+export function chaseStep(x, target, tau, dt) {
+    if (dt <= 0) return [x, 0];
+    // Exponential smoothing factor saturates at 1: a huge dt (frame stall)
+    // can place the camera AT the target, never past it — stall-safe.
+    const k = 1 - Math.exp(-dt / Math.max(tau, 0.001));
+    const nx = x + (target - x) * k;
+    return [nx, (nx - x) / dt];
+}
+
+/**
+ * ============================================================================
+ * RAIL — constant-velocity travel with a linear deceleration tail
+ * ============================================================================
+ * The camera holds a fixed speed for the first (1 − zone) of the remaining
+ * hop, then ramps speed linearly to zero across the final `decelZone` px.
+ *
+ * Properties that matter on weak hardware:
+ *   - ~10 arithmetic ops per frame; no exponentials, no oscillators.
+ *   - Trajectory is a fixed px/ms slope: every frame is congruent, so
+ *     30fps devices read as "slightly slower", never as lurching.
+ *   - Acceleration is piecewise constant → no inertial overshoot.
+ *   - Crossing guard: speed·dt can never land past the target.
+ *
+ * @param {number} x - Camera position, px
+ * @param {number} target - Target position, px
+ * @param {number} speed - Full-travel speed, px/ms (= describedHop / T)
+ * @param {number} decelZone - Linear ramp-down zone, px
+ * @param {number} dt - Timestep, ms
+ * @returns {[number, number]} New [x, current speed px/ms]
+ */
+export function railStep(x, target, speed, decelZone, dt) {
+    const remaining = Math.abs(target - x);
+    if (remaining < 0.01 || dt <= 0) return [target, 0];
+
+    const zone = Math.max(decelZone, 0.001);
+    const v = remaining > zone ? speed : (speed * remaining) / zone;
+    const travel = v * dt;
+
+    // Crossing guard — the camera can never shoot past the destination.
+    if (travel >= remaining) return [target, 0];
+    return [x + Math.sign(target - x) * travel, v];
+}
+
+/**
+ * ============================================================================
+ * FLING — momentum sweep: velocity-capped follower with ramp-up
+ * ============================================================================
+ * A chase variant where camera *velocity* is a state. Each frame the engine
+ * ramps velocity toward a desired value (lag/τ) clamped to a momentum
+ * ceiling:
+ *
+ *     v' → clamp((target − x)/τ, ±vCap),   x' → clamp(x + v·dt at target)
+ *
+ * During held key repeats the camera ramps to vCap and sweeps continuously
+ * (falling behind focus — the fling feel); after release the lag — and thus
+ * the desired velocity — decays and the camera glides into the target.
+ * Crossing and ceiling clamps make overshoot impossible.
+ *
+ * @param {number} x - Camera position, px
+ * @param {number} v - Camera velocity, px/ms
+ * @param {number} target - Target position, px
+ * @param {number} tau - Convergence time constant, ms
+ * @param {number} vCap - Momentum velocity ceiling, px/ms
+ * @param {number} dt - Timestep, ms
+ * @returns {[number, number]} New [x, v]
+ */
+export function flingStep(x, v, target, tau, vCap, dt) {
+    if (dt <= 0) return [x, v];
+    // Landed: kill momentum instantly so the camera can never drift past.
+    if (x === target) return [x, 0];
+
+    const dir = Math.sign(target - x);
+    const lag = Math.abs(target - x);
+
+    // Desired velocity: chase lag/τ, then clamp by the momentum ceiling AND
+    // by the braking distance sqrt(2·a·lag) — guarantees a friction glide
+    // that lands exactly on the target with zero residual speed.
+    let speed = Math.min(Math.abs(target - x) / Math.max(tau, 0.001), vCap);
+    const brakeLimit = Math.sqrt(2 * FLING_BRAKE_DECEL_PX_MS2 * lag);
+    speed = Math.min(speed, brakeLimit);
+    const clampedDesired = dir * speed;
+
+    // Velocity ramp (momentum retention): v drifts toward desired exp-slowly.
+    const k = 1 - Math.exp(-dt / FLING_RAMP_TAU_MS);
+    let nv = v + (clampedDesired - v) * k;
+    nv = Math.max(-vCap, Math.min(vCap, nv));
+
+    let nx = x + nv * dt;
+    // Crossing guard: never land past the target with residual momentum.
+    if (dir !== 0 && (nx - x) * dir > Math.abs(target - x)) {
+        nx = target;
+        nv = 0;
+    }
+    return [nx, nv];
+}
+
+/**
+ * ============================================================================
+ * PREFERENCE NORMALIZATION
+ * ============================================================================
+ * Single source of truth for which engine identifiers the scroll physics
+ * setting accepts. Shared by ScrollController, TouchHorizontalScroller and
+ * the settings UI so every surface resolves the stored preference the same
+ * way (and unrecognized garbage always falls back to classic easing).
+ */
+
+/** All engine identifiers recognized by the pref:scrollPhysics setting. */
+export const SCROLL_PHYSICS_ENGINES = ['easing', 'spring', 'chase', 'rail', 'fling'];
+
+/**
+ * Validates a stored scroll physics preference value.
+ *
+ * @param {string|null|undefined} value - Raw value from storage
+ * @returns {'easing'|'spring'|'chase'|'rail'|'fling'} Resolved engine
+ *   ('easing' for null, unknown, or the explicit classic-easing default)
+ */
+export function normalizeScrollPhysics(value) {
+    return SCROLL_PHYSICS_ENGINES.includes(value) && value !== 'easing' ? value : 'easing';
 }

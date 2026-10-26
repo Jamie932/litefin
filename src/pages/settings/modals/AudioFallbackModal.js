@@ -75,7 +75,9 @@ export class AudioFallbackModal {
                 const cultures = await api.getCultures();
                 if (cultures && Array.isArray(cultures)) {
                     languageManager.registerCultures(cultures);
-                    this.page.prefLanguages = cultures
+                    // Filter out regional dialects to retain only singular canonical languages
+                    const singularCultures = languageManager.filterSingularCultures(cultures);
+                    this.page.prefLanguages = singularCultures
                         .map((c) => ({
                             value: c.ThreeLetterISOLanguageName || c.Name,
                             label: i18n.ensureBiDi(c.DisplayName),
@@ -99,7 +101,10 @@ export class AudioFallbackModal {
         const SLOTS = ['pref', '1', '2', '3'];
         let activeSlot = 'pref';
         let activeFilter = languageManager.hasFavorites() ? 'favorites' : 'all';
-        const validLanguages = (this.page?.prefLanguages || []).filter((o) => o.value !== 'Default' && o.value !== 'none');
+        // Filter out Default/none and exclude any regional dialects
+        const validLanguages = languageManager.filterSingularCultures(
+            (this.page?.prefLanguages || []).filter((o) => o.value !== 'Default' && o.value !== 'none')
+        );
 
         // Helper: retrieve slot label and short code
         const getSlotValueAndLabel = (slot) => {

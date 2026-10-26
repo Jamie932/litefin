@@ -224,6 +224,79 @@ class LanguageManager {
     }
 
     /**
+     * Filter a collection of culture definitions or language dropdown options to retain
+     * only singular, canonical languages and strip out regional dialects.
+     *
+     * Media audio and subtitle streams adhere to ISO-639-2/ISO-639-1 standards without
+     * regional country sub-tags (e.g., 'ara' or 'eng', not 'ar-EG' or 'en-US').
+     * This utility excludes entries containing country qualifiers in parentheses or
+     * sub-tag delimiters ('-', '_'), and deduplicates entries by canonical language code.
+     *
+     * @param {Array<Object>} cultures - Array of culture objects or dropdown option entries
+     * @returns {Array<Object>} Filtered array containing singular language definitions
+     */
+    filterSingularCultures(cultures) {
+        // Return empty collection if input is invalid or not an array
+        if (!cultures || !Array.isArray(cultures)) {
+            return [];
+        }
+
+        // Track seen language identifiers to prevent dialect and code duplicates
+        const seenKeys = new Set();
+        const singularList = [];
+
+        // Evaluate each culture entry against canonical language rules
+        cultures.forEach((item) => {
+            if (!item) return;
+
+            // Extract raw codes and display labels for dialect detection
+            const rawCode = item.Name || item.value || item.code || '';
+            const rawName = item.DisplayName || item.label || item.name || '';
+
+            // Reject explicit dialect indicators: hyphenated regional codes or country parentheses
+            if (rawCode.includes('-') || rawCode.includes('_') || rawName.includes('(')) {
+                return;
+            }
+
+            // Normalize using language manager mapping
+            const norm = this.normalizeLanguage(item);
+            if (!norm || !norm.code) return;
+
+            // Guard against normalized values containing dialect tags or parentheses
+            if (norm.code.includes('-') || norm.code.includes('_') || (norm.name && norm.name.includes('('))) {
+                return;
+            }
+
+            // Generate lowercase keys for exact deduplication
+            const canonicalCode = (norm.code || '').toLowerCase();
+            const twoLetterCode = (norm.twoLetter || '').toLowerCase();
+            const englishName = (norm.name || '').toLowerCase();
+
+            // Deduplicate across code variants and English names
+            if (
+                seenKeys.has(canonicalCode) ||
+                (twoLetterCode && seenKeys.has(twoLetterCode)) ||
+                (englishName && seenKeys.has(englishName))
+            ) {
+                return;
+            }
+
+            // Register all related keys to prevent alias collisions
+            seenKeys.add(canonicalCode);
+            if (twoLetterCode) seenKeys.add(twoLetterCode);
+            if (englishName) seenKeys.add(englishName);
+            if (norm.altCodes && Array.isArray(norm.altCodes)) {
+                norm.altCodes.forEach((alt) => seenKeys.add(alt.toLowerCase()));
+            }
+
+            // Retain original item object in the filtered singular output
+            singularList.push(item);
+        });
+
+        return singularList;
+    }
+
+    /**
      * Retrieve the user's saved favorite languages from persistent storage.
      * @returns {Array<Object>} Array of favorite language objects { code, name, twoLetter }
      */

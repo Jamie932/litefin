@@ -64,8 +64,11 @@ export async function loadCultureOptions() {
             // Register culture codes with language manager for quick translation lookups
             languageManager.registerCultures(cultures);
 
+            // Filter out regional dialects to retain only singular canonical languages
+            const singularCultures = languageManager.filterSingularCultures(cultures);
+
             // Map each entry to standard dropdown option format with BiDi support
-            cachedCultures = cultures
+            cachedCultures = singularCultures
                 .map((c) => ({
                     value: c.ThreeLetterISOLanguageName || c.Name,
                     label: i18n.ensureBiDi(c.DisplayName),

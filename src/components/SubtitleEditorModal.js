@@ -122,7 +122,9 @@ class SubtitleEditorModal {
                 detailsPage._item?.MediaSources?.[0]?.MediaStreams?.find((s) => s.Type === 'Audio')?.Language || '';
             let currentLang = savedLang || prefLang || audioLang || 'eng';
 
-            const langOptions = cultures
+            // Filter out regional dialects to retain only singular canonical languages
+            const singularCultures = languageManager.filterSingularCultures(cultures);
+            const langOptions = singularCultures
                 .filter((c) => c.ThreeLetterISOLanguageName) // Only include languages with a valid code
                 .sort((a, b) => (a.DisplayName || '').localeCompare(b.DisplayName || ''))
                 .map((c) => ({

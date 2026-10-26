@@ -48,6 +48,7 @@ import { SelectionModal } from './modals/SelectionModal.js';
 import { SettingsDropdownDispatcher } from './controllers/SettingsDropdownDispatcher.js';
 import { SettingsSlider } from './components/SettingsSlider.js';
 import { loadCultureOptions, getCachedCultures, getFontDropdownOptions, loadFallbackFontOptions } from './helpers/SettingsFontOptions.js';
+import { languageManager } from '../../utils/LanguageManager.js';
 import { SettingsResetController } from './controllers/SettingsResetController.js';
 
 const log = logger.create('SettingsPage');
@@ -120,7 +121,9 @@ class SettingsPage extends Page {
             try {
                 const cultures = await api.getCultures();
                 if (cultures && Array.isArray(cultures)) {
-                    cachedCultures = cultures.map((c) => ({
+                    // Filter out regional dialects to retain only singular canonical languages
+                    const singularCultures = languageManager.filterSingularCultures(cultures);
+                    cachedCultures = singularCultures.map((c) => ({
                         value: c.ThreeLetterISOLanguageName || c.Name,
                         label: i18n.ensureBiDi(c.DisplayName)
                     }));

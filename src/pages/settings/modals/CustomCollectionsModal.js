@@ -9,14 +9,14 @@
  * ============================================================================
  */
 
-import { storage } from '../../../services/StorageService.js';
-import { i18n } from '../../../services/I18nService.js';
-import { api } from '../../../services/api.js';
+import { storage } from '../../../utils/StorageService.js';
+import { i18n } from '../../../utils/i18n.js';
+import { api } from '../../../api/index.js';
 import { focusManager } from '../../../ui/FocusManager.js';
-import { escapeHtml } from '../../../utils/htmlUtils.js';
-import { Logger } from '../../../utils/Logger.js';
+import { escapeHtml } from '../../../utils/Utils.js';
+import { logger } from '../../../utils/Logger.js';
 
-const log = new Logger('CustomCollectionsModal');
+const log = logger.create('CustomCollectionsModal');
 
 /**
  * Computes a human-readable summary badge indicating how many custom

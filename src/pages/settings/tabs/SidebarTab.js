@@ -9,16 +9,16 @@
  * ============================================================================
  */
 
-import { storage } from '../../../services/StorageService.js';
-import { i18n } from '../../../services/I18nService.js';
-import { api } from '../../../services/api.js';
-import { eventBus } from '../../../services/EventBus.js';
+import { storage } from '../../../utils/StorageService.js';
+import { i18n } from '../../../utils/i18n.js';
+import { api } from '../../../api/index.js';
+import { eventBus } from '../../../core/EventBus.js';
 import { focusManager } from '../../../ui/FocusManager.js';
 import { layoutManager } from '../../../ui/LayoutManager.js';
-import { sidebarLayoutManager } from '../../../ui/SidebarLayoutManager.js';
-import { Logger } from '../../../utils/Logger.js';
+import { sidebarLayoutManager } from '../../../utils/SidebarLayoutManager.js';
+import { logger } from '../../../utils/Logger.js';
 
-const log = new Logger('SidebarTab');
+const log = logger.create('SidebarTab');
 
 const UP_SVG = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>';
 const DOWN_SVG = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>';

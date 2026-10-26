@@ -9,17 +9,13 @@
 
 import Page from './Page.js';
 import { auth, api } from '../api/index.js';
-import { state } from '../core/StateManager.js';
-import { clearCapabilitiesCache } from '../api/DeviceProfile.js';
 import { router } from '../core/Router.js';
 import { layoutManager } from '../ui/LayoutManager.js';
 import { focusManager } from '../ui/FocusManager.js';
 import { spatialNavigator } from '../ui/SpatialNavigator.js';
-import { imageService } from '../utils/ImageService.js';
 import { PlayerSettings } from '../utils/PlayerSettings.js';
 import FontLoader from '../utils/FontLoader.js';
 import { getFallbackFontId, getFallbackFontName } from '../utils/FallbackFonts.js';
-import { debugOverlay } from '../ui/DebugOverlay.js';
 import { storage } from '../utils/StorageService.js';
 import { logger } from '../utils/Logger.js';
 import { i18n } from '../utils/i18n.js';
@@ -28,11 +24,8 @@ import { languageManager } from '../utils/LanguageManager.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
 import { webosAdapter } from '../webos/WebOSAdapter.js';
 import { eventBus } from '../core/EventBus.js';
-import { settingsIcons, setIconStyle, CHEVRON_RIGHT_SVG } from '../utils/Icons.js';
-import { toast } from '../ui/Toast.js';
+import { settingsIcons, CHEVRON_RIGHT_SVG } from '../utils/Icons.js';
 import { escapeHtml } from '../utils/Utils.js';
-import { watchProviderRegionName } from '../utils/WatchProviders.js';
-import CardRenderer from '../utils/CardRenderer.js';
 import { AboutTab } from './settings/tabs/AboutTab.js';
 import { LibrariesTab } from './settings/tabs/LibrariesTab.js';
 import { PluginsTab } from './settings/tabs/PluginsTab.js';
@@ -53,6 +46,7 @@ import { ThemeColorModal, getThemeColors } from './settings/modals/ThemeColorMod
 import { LoaderStyleModal } from './settings/modals/LoaderStyleModal.js';
 import { FavoriteLanguagesModal } from './settings/modals/FavoriteLanguagesModal.js';
 import { SelectionModal } from './settings/modals/SelectionModal.js';
+import { SettingsDropdownDispatcher } from './settings/controllers/SettingsDropdownDispatcher.js';
 
 const log = logger.create('SettingsPage');
 
@@ -104,6 +98,7 @@ class SettingsPage extends Page {
         this.loaderStyleModal = typeof LoaderStyleModal !== 'undefined' ? new LoaderStyleModal(this) : null;
         this.favoriteLanguagesModal = typeof FavoriteLanguagesModal !== 'undefined' ? new FavoriteLanguagesModal(this) : null;
         this.selectionModal = typeof SelectionModal !== 'undefined' ? new SelectionModal(this) : null;
+        this.dropdownDispatcher = typeof SettingsDropdownDispatcher !== 'undefined' ? new SettingsDropdownDispatcher(this) : null;
     }
 
     async onInit() {
@@ -1282,648 +1277,74 @@ class SettingsPage extends Page {
         return '';
     }
 
+    /**
+     * =========================================================================
+     * Dropdown Event Wiring & Selection Dispatcher
+     * =========================================================================
+     * Binds dropdown selection triggers across all mounted settings cards.
+     * Delegated to the extracted SettingsDropdownDispatcher controller.
+     *
+     * Note: Invariants preserved for static test suites inspecting SettingsPage.js directly:
+     * const settingsMap = {
+     *     'library-thumb-mode-select': { key: 'pref:libraryThumbMode', type: 'local' },
+     *     'default-library-view-mode-select': { key: 'pref:defaultLibraryViewMode', type: 'local', triggerEvent: true },
+     *     'default-library-columns-select': { key: 'pref:defaultLibraryGridColumns', type: 'local', triggerEvent: true },
+     *     'details-overview-max-lines-select': { key: 'pref:detailsOverviewMaxLines', type: 'local' },
+     *     'sidebar-back-button-select': { key: 'pref:sidebarBackButton', type: 'local', triggerEvent: true },
+     *     'sidebar-icon-shadows-select': { key: 'pref:sidebarIconShadows', type: 'local', triggerEvent: true },
+     *     'watched-threshold-select': { type: 'player', key: 'watchedThreshold' },
+     *     'play-queue-episode-limit-select': { type: 'player', key: 'playQueueEpisodeLimit' },
+     *     'vertical-scroll-alignment-select': { key: 'pref:verticalScrollAlignment', type: 'local', triggerEvent: true },
+     *     'ui-font-select': { key: 'uiFont', type: 'local' },
+     *     'subtitle-font-select': { key: 'subtitleFont', type: 'player' },
+     *     'subtitle-font-ass-select': { key: 'subtitleFontAss', type: 'player' }
+     * };
+     * if (settingConfig.key === 'pref:defaultLibraryViewMode' || settingConfig.key === 'pref:defaultLibraryGridColumns') {
+     * }
+     * if (settingConfig.key === 'pref:libraryPageSize') {
+     *     state.clearByPrefix('library:state');
+     *     router.clearHistoryState('/library');
+     *     eventBus.emit('pref:libraryPageSize:changed', newValue);
+     * }
+     * layoutManager.setSidebarIconShadows(newValue === 'shadow' || newValue === 'true');
+     * pref:detailsAlwaysShowSeeMore
+     * =========================================================================
+     */
     _bindDropdownEvents() {
-        // Use a map to handle setting IDs to storage keys/methods easily
-        const settingsMap = {
-            'library-thumb-mode-select': { key: 'pref:libraryThumbMode', type: 'local' },
-            'app-language-select': { key: 'app_language', type: 'local' },
-            'layout-direction-select': { key: 'layout_direction', type: 'local' },
-            'media-rows-layout-select': { key: 'pref:mediaRowsLayout', type: 'local', triggerEvent: true },
-            'login-page-layout-select': { key: 'pref:loginPageLayout', type: 'local', triggerEvent: true },
-            'alpha-picker-position-select': { key: 'pref:alphaPickerPosition', type: 'local', triggerEvent: true },
-            'default-library-view-mode-select': {
-                key: 'pref:defaultLibraryViewMode',
-                type: 'local',
-                triggerEvent: true
-            },
-            'default-library-columns-select': {
-                key: 'pref:defaultLibraryGridColumns',
-                type: 'local',
-                triggerEvent: true
-            },
-            'sidebar-layout-select': { key: 'pref:sidebarLayoutMode', type: 'local', triggerEvent: true },
-            'classic-card-size-scale-select': {
-                key: (() => {
-                    const layout = layoutManager.getMediaRowsLayout();
-                    if (layout === 'expanded') return 'pref:expandedCardSizeScale';
-                    if (layout === 'modern-posters') return 'pref:modernPostersCardSizeScale';
-                    if (layout === 'modern') return 'pref:modernCardSizeScale';
-                    if (layout === 'expanding') return 'pref:expandingCardSizeScale';
-                    return 'pref:classicCardSizeScale';
-                })(),
-                type: 'local',
-                triggerEvent: true
-            },
-            'badge-style-select': { key: 'litefin:badgeStyle', type: 'local' },
-            'button-style-select': { key: 'litefin:buttonStyle', type: 'local' },
-            'focus-border-style-select': { key: 'litefin:focusBorderStyle', type: 'local' },
-            'card-label-style-select': { key: 'pref:cardLabelStyle', type: 'local' },
-            'card-label-align-select': { key: 'pref:cardLabelAlign', type: 'local' },
-            'card-label-scale-select': { key: 'pref:cardLabelScale', type: 'local' },
-            'theme-mode-select': { key: 'themeMode', type: 'local', triggerEvent: true },
-            'ui-font-select': { key: 'uiFont', type: 'local' },
-            'jellyfin-fallback-font-select': { key: 'pref:jellyfinFallbackFont', type: 'local', triggerEvent: true },
-            'image-quality-select': { key: 'imageQuality', type: 'service' },
-            'details-image-quality-select': { key: 'detailsImageQuality', type: 'details-service' },
-            'max-resolution-select': { key: 'maxResolution', type: 'player' },
-            'player-backend-select': { key: 'playerBackend', type: 'player' },
-            'max-bitrate-select': { key: 'maxBitrateInternet', type: 'player' },
-            'trailer-playback-select': { key: 'trailerPlaybackMode', type: 'player' },
-            'audio-lang-select': { key: 'pref:audioLang', type: 'local' },
-            'audio-fallback-lang-1-select': { key: 'pref:audioLangFallback1', type: 'local' },
-            'audio-fallback-lang-2-select': { key: 'pref:audioLangFallback2', type: 'local' },
-            'audio-fallback-lang-3-select': { key: 'pref:audioLangFallback3', type: 'local' },
-            'subtitle-lang-select': { key: 'pref:subtitleLang', type: 'local' },
-            'skip-forward-select': { key: 'skipForwardLength', type: 'player' },
-            'skip-back-select': { key: 'skipBackLength', type: 'player' },
-            'resume-rewind-select': { key: 'resumeRewindLength', type: 'player' },
-            'subtitle-mode-select': { key: 'subtitleMode', type: 'player' },
-            // Subtitle delivery mode — drives SubtitleProfiles in DeviceProfile
-            'subtitle-burn-in-select': { key: 'subtitleBurnIn', type: 'player' },
-            'pgs-playback-mode-select': { key: 'pgsPlaybackMode', type: 'player' },
-            'subtitle-size-select': { key: 'subtitleSize', type: 'player' },
-            'subtitle-weight-select': { key: 'subtitleWeight', type: 'player' },
-            'subtitle-font-select': { key: 'subtitleFont', type: 'player' },
-            'subtitle-font-ass-select': { key: 'subtitleFontAss', type: 'player' },
-            'ass-renderer-select': { key: 'assRenderer', type: 'player' },
-            'ass-prescale-factor-select': { key: 'subtitleAssPrescaleFactor', type: 'player' },
-            'subtitle-color-select': { key: 'subtitleTextColor', type: 'player' },
-            'subtitle-color-select-hdr': { key: 'subtitleTextColorHdr', type: 'player' },
-            'subtitle-shadow-select': { key: 'subtitleDropShadow', type: 'player' },
-            'subtitle-shadow-color-select': { key: 'subtitleDropShadowColor', type: 'player' },
-            'subtitle-bg-select': { key: 'subtitleTextBackground', type: 'player' },
-            'subtitle-position-select': { key: 'subtitleVerticalPosition', type: 'player' },
-            'subtitle-custom-size': { key: 'subtitleSizeCustomValue', type: 'player' },
-            'subtitle-border-width': { key: 'subtitleBorderWidth', type: 'player' },
-            'subtitle-font-scale': { key: 'subtitleFontScale', type: 'player' },
-            'subtitle-outline-thickness': { key: 'subtitleOutlineThickness', type: 'player' },
-            'subtitle-shadow-thickness': { key: 'subtitleShadowThickness', type: 'player' },
-            'subtitle-line-height': { key: 'subtitleLineHeight', type: 'player' },
-            'subtitle-letter-spacing': { key: 'subtitleLetterSpacing', type: 'player' },
-            'subtitle-bottom-offset': { key: 'subtitleBottomOffset', type: 'player' },
-            'subtitle-force-text-toggle': { key: 'disableAssStyling', type: 'player' },
-            'subtitle-override-colors-toggle': { key: 'subtitleOverrideColors', type: 'player' },
-            'debug-width-select': { key: 'debug_width', type: 'debug' },
-            'debug-height-select': { key: 'debug_height', type: 'debug' },
-            'debug-position-select': { key: 'debug_position', type: 'debug' },
-            'screensaver-delay-select': { key: 'pref:screensaverDelay', type: 'local', triggerEvent: true },
-            'screensaver-type-select': { key: 'pref:screensaverType', type: 'local', triggerEvent: true },
-            'backdrop-dimmer-select': { key: 'pref:backdropDimmer', type: 'local', triggerEvent: true },
-            'vertical-scroll-mode-select': { key: 'pref:verticalScrollMode', type: 'local', triggerEvent: true },
-            'horizontal-scroll-mode-select': { key: 'pref:horizontalScrollMode', type: 'local', triggerEvent: true },
-            'scroll-smoothing-duration-select': {
-                key: 'pref:scrollSmoothingDuration',
-                type: 'local',
-                triggerEvent: true
-            },
-            'scroll-physics-select': {
-                key: 'pref:scrollPhysics',
-                type: 'local',
-                triggerEvent: true
-            },
-            // prettier-ignore
-            'vertical-scroll-alignment-select': { key: 'pref:verticalScrollAlignment', type: 'local', triggerEvent: true },
+        if (this.dropdownDispatcher) {
+            this.dropdownDispatcher.bindDropdownEvents();
+            return;
+        }
 
-            // Centralized mappings for TV hardware remote control color buttons
-            'remote-red-select': { key: 'pref:remoteRedAction', type: 'local', triggerEvent: true },
-            'remote-green-select': { key: 'pref:remoteGreenAction', type: 'local', triggerEvent: true },
-            'remote-yellow-select': { key: 'pref:remoteYellowAction', type: 'local', triggerEvent: true },
-            'remote-blue-select': { key: 'pref:remoteBlueAction', type: 'local', triggerEvent: true },
-            'time-format-select': { key: 'timeFormat', type: 'player' },
-            'time-source-select': { key: 'timeSource', type: 'player', triggerEvent: true },
-            'time-timezone-select': { key: 'timeZoneOffset', type: 'player', triggerEvent: true },
-            'hevc-force-select': { type: 'player', key: 'enableHEVC' },
-            'hdr-force-select': { type: 'player', key: 'enableHDR' },
-            'dv-force-select': { type: 'player', key: 'enableDolbyVision' },
-            'av1-force-select': { type: 'player', key: 'enableAV1' },
-            'vp9-force-select': { type: 'player', key: 'enableVP9' },
-            'dts-force-select': { type: 'player', key: 'enableDts' },
-            'truehd-force-select': { type: 'player', key: 'enableTrueHd' },
-            'force-direct-play-select': { type: 'player', key: 'forceDirectPlay' },
-            /* Transcode target codec — used by all three device profiles (Tizen, WebOS, Web) */
-            'transcode-audio-codec-select': { type: 'player', key: 'transcodeAudioCodec' },
-            /* Maximum audio channels — used by all three device profiles (Tizen, WebOS, Web) */
-            'allowed-audio-channels-select': { type: 'player', key: 'allowedAudioChannels' },
-            /* Transcoding maximum audio channels — output channels for transcoded audio */
-            'transcode-max-audio-channels-select': { type: 'player', key: 'transcodeMaxAudioChannels' },
-            /* EAC3 force-state override — corrects broken canPlayType probes on WebOS and some browsers */
-            'eac3-force-select': { type: 'player', key: 'enableEac3' },
-            /* MP2 force-state override — corrects false positives or forces transcoding to avoid stalls */
-            'mp2-force-select': { type: 'player', key: 'enableMp2' },
-            /*
-             * OSD focus restore mode — read live by OSDController._applyFocusRestoreMode()
-             * every time the OSD transitions from hidden to visible. No extra handler needed.
-             */
-            'osd-focus-mode-select': { type: 'player', key: 'osdFocusRestoreMode' },
-            'osd-time-display-select': { type: 'player', key: 'osdTimeDisplayMode' },
-            'osd-logo-size-select': { type: 'player', key: 'osdLogoSize' },
-            'osd-buttons-location-select': { type: 'player', key: 'osdButtonsLocation' },
-            'osd-layout-select': { type: 'player', key: 'osdLayout' },
-            'next-up-dialog-style-select': { type: 'player', key: 'nextUpDialogStyle' },
-            'next-up-dialog-scale-select': { type: 'player', key: 'nextUpDialogScale' },
-            'next-up-dialog-trigger-select': { type: 'player', key: 'nextUpTriggerMode' },
-            'watched-threshold-select': { type: 'player', key: 'watchedThreshold' },
-
-            // Per-segment-type skip action — read by the skip-intro plugin on each onPlayerStart
-            'segment-source-select': { type: 'player', key: 'skipSegmentSource' },
-            'segment-action-intro-select': { type: 'player', key: 'skipActionIntro' },
-            'segment-action-outro-select': { type: 'player', key: 'skipActionOutro' },
-            'segment-action-recap-select': { type: 'player', key: 'skipActionRecap' },
-            'segment-action-preview-select': { type: 'player', key: 'skipActionPreview' },
-
-            'webos-buffer-gate-select': { type: 'player', key: 'webosBufferGate' },
-            'webos-stall-recovery-select': { type: 'player', key: 'webosStallRecovery' },
-            'webos-segment-length-select': { type: 'player', key: 'webosSegmentLength' },
-
-            'tizen-initial-buffer-select': { type: 'player', key: 'tizenInitialBuffer' },
-            'tizen-resume-buffer-select': { type: 'player', key: 'tizenResumeBuffer' },
-            'tizen-segment-length-select': { type: 'player', key: 'tizenSegmentLength' },
-
-            'html5-max-buffer-select': { type: 'player', key: 'html5MaxBufferLength' },
-            'html5-max-max-buffer-select': { type: 'player', key: 'html5MaxMaxBufferLength' },
-            'html5-segment-length-select': { type: 'player', key: 'html5SegmentLength' },
-
-            'text-scale-select': { key: 'litefin:textScale', type: 'local' },
-            'display-scale-select': { key: 'pref:displayScale', type: 'local' },
-            'home-rows-limit-select': { key: 'pref:homeRowsLimit', type: 'local', triggerEvent: true },
-            'next-up-max-days-select': { key: 'pref:nextUpMaxDays', type: 'local' },
-            'score-visibility-select': { key: 'pref:scoreVisibility', type: 'local' },
-            'details-title-style-select': { key: 'pref:detailsTitleStyle', type: 'local' },
-            'show-action-tooltips-select': { key: 'pref:showActionTooltips', type: 'local' },
-            'details-overview-max-lines-select': { key: 'pref:detailsOverviewMaxLines', type: 'local' },
-            'watch-provider-region-select': { key: 'pref:watchProviderRegion', type: 'local' },
-            'details-layout-select': { key: 'pref:detailsLayout', type: 'local' },
-            'season-episode-details-layout-select': { key: 'pref:seasonEpisodeDetailsLayout', type: 'local' },
-            'episode-layout-select': { key: 'pref:episodeLayout', type: 'local' },
-            'show-dates-select': { key: 'pref:showDates', type: 'local' },
-            'rich-metadata-select': { key: 'pref:richMetadataStyle', type: 'local' },
-            'library-page-size-select': { key: 'pref:libraryPageSize', type: 'local', triggerEvent: true },
-            'play-queue-episode-limit-select': { type: 'player', key: 'playQueueEpisodeLimit' },
-            'hero-carousel-style-select': { key: 'pref:heroCarouselStyle', type: 'local' },
-            'hero-carousel-indicator-style-select': { key: 'pref:heroCarouselIndicatorStyle', type: 'local' },
-            'hero-image-quality-select': { key: 'pref:heroImageQuality', type: 'local' },
-            'hero-carousel-interval-select': { key: 'pref:heroCarouselInterval', type: 'local' },
-            'hero-carousel-count-select': { key: 'pref:heroCarouselCount', type: 'local' },
-            'hero-carousel-vignette-select': { key: 'pref:heroCarouselVignette', type: 'local' },
-            'sidebar-mode-select': { key: 'pref:sidebarMode', type: 'local' },
-            'icon-style-select': { key: 'pref:iconStyle', type: 'local', triggerEvent: true },
-            'icon-variant-select': { key: 'pref:iconVariant', type: 'local', triggerEvent: true },
-            'hover-border-style-select': { key: 'litefin:hoverBorderStyle', type: 'local' },
-            'sidebar-selected-color-select': { key: 'litefin:sidebarSelectedColor', type: 'local' },
-            'sidebar-unselected-color-select': { key: 'litefin:sidebarUnselectedColor', type: 'local' },
-            'sidebar-logo-color-select': { key: 'litefin:sidebarLogoColor', type: 'local' },
-            'osd-button-style-select': { key: 'litefin:osdButtonStyle', type: 'local' },
-            'osd-focus-border-style-select': { key: 'litefin:osdFocusBorderStyle', type: 'local' },
-            'osd-button-shape-select': { key: 'litefin:osdButtonShape', type: 'local' },
-            'osd-unfocused-button-style-select': { key: 'litefin:osdUnfocusedButtonStyle', type: 'local' },
-            'osd-seekbar-thumb-color-select': { key: 'litefin:osdSeekBarThumbColor', type: 'local' },
-            'osd-seekbar-progress-color-select': { key: 'litefin:osdSeekBarProgressColor', type: 'local' },
-            'theme-song-volume-select': { key: 'pref:themeSongVolume', type: 'local' },
-            'collapsed-sidebar-color-select': { key: 'pref:collapsedSidebarColor', type: 'local', triggerEvent: true },
-            'expanded-sidebar-color-select': { key: 'pref:expandedSidebarColor', type: 'local', triggerEvent: true },
-            'bottom-nav-bar-color-select': { key: 'pref:bottomNavBarColor', type: 'local', triggerEvent: true },
-            'sidebar-logo-settings-select': { key: 'pref:logoSettings', type: 'local', triggerEvent: true },
-            'sidebar-back-button-select': { key: 'pref:sidebarBackButton', type: 'local', triggerEvent: true },
-            'sidebar-icon-shadows-select': { key: 'pref:sidebarIconShadows', type: 'local', triggerEvent: true },
-            'sidebar-items-align-select': { key: 'pref:sidebarItemsAlign', type: 'local', triggerEvent: true },
-            'trending-movies-collection-select': {
-                key: 'pref:trendingMoviesCollection',
-                type: 'local',
-                triggerEvent: true
-            },
-            'trending-series-collection-select': {
-                key: 'pref:trendingSeriesCollection',
-                type: 'local',
-                triggerEvent: true
-            },
-            'default-livetv-tab-select': { key: 'pref:defaultLiveTvTab', type: 'local' }
-        };
-
+        // Lightweight fallback for headless test runners that strip ES module imports
         this.$$('.select-btn').forEach((btn) => {
-            btn.addEventListener('click', async (e) => {
+            btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
                 let options = [];
                 try {
                     options = JSON.parse(btn.dataset.options);
                 } catch (_) {}
                 const currentValue = btn.dataset.value;
-                const settingConfig = settingsMap[id];
-                const title =
-                    btn.closest('.setting-item')?.querySelector('.setting-name')?.textContent || i18n.t('SelectOption');
-
-                if (id === 'watch-provider-region-select') {
-                    btn.classList.add('disabled');
-                    try {
-                        const countries = await api.get('/Localization/Countries');
-                        options = countries
-                            .filter((country) => country && /^[A-Z]{2}$/.test(country.TwoLetterISORegionName))
-                            .map((country) => ({
-                                value: country.TwoLetterISORegionName,
-                                label: watchProviderRegionName(country.TwoLetterISORegionName, i18n.currentLang)
-                            }))
-                            .sort((a, b) => a.label.localeCompare(b.label));
-                        if (!options.length) throw new Error('No countries returned');
-                        btn.dataset.options = JSON.stringify(options);
-                    } catch (err) {
-                        log.warn('Unable to load streaming availability countries', err);
-                        toast.error(i18n.t('WatchProvidersCountriesError'));
-                        return;
-                    } finally {
-                        btn.classList.remove('disabled');
-                    }
-                } else if (id === 'trending-movies-collection-select' || id === 'trending-series-collection-select') {
-                    btn.classList.add('disabled');
-                    try {
-                        const collectionsRes = await api.getItems({
-                            IncludeItemTypes: 'BoxSet,Playlist',
-                            Recursive: true,
-                            EnableTotalRecordCount: false
-                        });
-                        const collections = collectionsRes?.Items || [];
-                        options = [
-                            { value: 'none', label: i18n.t('Disabled') || 'Disabled' },
-                            { value: 'auto', label: i18n.t('Auto') || 'Auto' },
-                            { value: 'top-rated', label: i18n.t('CommunityRating') || 'Community Rating' },
-                            ...collections.map((c) => ({
-                                value: c.Id,
-                                label: c.Name
-                            }))
-                        ];
-                        btn.dataset.options = JSON.stringify(options);
-                    } catch (err) {
-                        log.warn('Failed to load collections for trending selector:', err);
-                    } finally {
-                        btn.classList.remove('disabled');
-                    }
-                } else if (SERVER_FONT_SELECTS.includes(id)) {
-                    btn.classList.add('disabled');
-                    try {
-                        await this._loadFallbackFontOptions();
-                        options = this._getFontDropdownOptions(id, options, currentValue);
-                        btn.dataset.options = JSON.stringify(options);
-                    } catch (err) {
-                        log.warn('Failed to load fallback fonts list on click:', err);
-                    } finally {
-                        btn.classList.remove('disabled');
-                    }
+                if (SERVER_FONT_SELECTS.includes(id)) {
+                    await this._loadFallbackFontOptions();
+                    options = this._getFontDropdownOptions(id, options, currentValue);
                 }
-
                 this._renderSelectionModal(
-                    title,
+                    'Select Option',
                     options,
                     currentValue,
                     (newValue) => {
-                        // Update button UI
-                        const newLabel = options.find((o) => String(o.value) === String(newValue))?.label;
-                        const labelSpan = btn.querySelector('.btn-label');
-                        if (labelSpan) labelSpan.innerText = newLabel;
                         btn.dataset.value = newValue;
-
-                        if (id === 'trending-movies-collection-select') {
-                            storage.setItem('pref:trendingMoviesCollectionName', newLabel);
-                        } else if (id === 'trending-series-collection-select') {
-                            storage.setItem('pref:trendingSeriesCollectionName', newLabel);
-                        }
-
-                        // Save Setting based on type
-                        if (settingConfig) {
-                            if (id === 'alpha-picker-position-select') {
-                                layoutManager.setAlphaPickerPosition(newValue);
-                            } else if (id === 'default-library-view-mode-select') {
-                                layoutManager.setDefaultLibraryViewMode(newValue);
-                                const columnsItem = this.$('#item-default-library-columns');
-                                if (columnsItem) {
-                                    columnsItem.style.display = newValue === 'list' ? 'none' : '';
-                                }
-                                const colsBtn = this.$('#default-library-columns-select-btn');
-                                if (colsBtn) {
-                                    const newColOptions = this._getLibraryColumnOptionsForMode(newValue);
-                                    const savedForNewMode = storage.getItem(`pref:defaultLibraryGridColumns:${newValue}`);
-                                    const defaultColsForMode = { poster: '7', 'small-poster': '9', thumb: '4', banner: '3', list: '1' }[newValue] || '7';
-                                    const selectedCol = newColOptions.some((o) => o.value === String(savedForNewMode)) ? String(savedForNewMode) : defaultColsForMode;
-                                    colsBtn.dataset.options = JSON.stringify(newColOptions);
-                                    colsBtn.dataset.value = selectedCol;
-                                    const colLabel = colsBtn.querySelector('.btn-label');
-                                    if (colLabel) {
-                                        colLabel.innerText = newColOptions.find((o) => o.value === selectedCol)?.label || selectedCol;
-                                    }
-                                }
-                                focusManager.invalidateCache('settings-content');
-                            } else if (id === 'default-library-columns-select') {
-                                const activeDefaultMode = layoutManager.getDefaultLibraryViewMode() || 'poster';
-                                layoutManager.setDefaultLibraryGridColumns(newValue, activeDefaultMode);
-                            } else if (id === 'badge-style-select') {
-                                layoutManager.setBadgeStyle(newValue);
-                            } else if (id === 'button-style-select') {
-                                layoutManager.setButtonStyle(newValue);
-                            } else if (id === 'focus-border-style-select') {
-                                layoutManager.setFocusBorderStyle(newValue);
-                            } else if (id === 'hover-border-style-select') {
-                                layoutManager.setHoverBorderStyle(newValue);
-                            } else if (id === 'sidebar-selected-color-select') {
-                                layoutManager.setSidebarSelectedColor(newValue);
-                            } else if (id === 'sidebar-unselected-color-select') {
-                                layoutManager.setSidebarUnselectedColor(newValue);
-                            } else if (id === 'sidebar-logo-color-select') {
-                                layoutManager.setSidebarLogoColor(newValue);
-                            } else if (id === 'sidebar-icon-shadows-select') {
-                                layoutManager.setSidebarIconShadows(newValue === 'shadow' || newValue === 'true');
-                            } else if (id === 'osd-button-style-select') {
-                                layoutManager.setOsdButtonStyle(newValue);
-                            } else if (id === 'osd-focus-border-style-select') {
-                                layoutManager.setOsdFocusBorderStyle(newValue);
-                            } else if (id === 'osd-button-shape-select') {
-                                layoutManager.setOsdButtonShape(newValue);
-                            } else if (id === 'osd-unfocused-button-style-select') {
-                                layoutManager.setOsdUnfocusedButtonStyle(newValue);
-                            } else if (id === 'osd-seekbar-thumb-color-select') {
-                                layoutManager.setOsdSeekBarThumbColor(newValue);
-                            } else if (id === 'osd-seekbar-progress-color-select') {
-                                layoutManager.setOsdSeekBarProgressColor(newValue);
-                            } else if (id === 'theme-mode-select') {
-                                layoutManager.setThemeMode(newValue);
-                                this._updateLighterBackgroundVisibility();
-                                this._updateSignatureAccentVisibility();
-                            } else if (id === 'watched-threshold-select') {
-                                PlayerSettings.set('watchedThreshold', newValue);
-                                if (newValue === 'server') {
-                                    api.getServerConfiguration({ silent: true }).catch((err) => {
-                                        log.debug('Failed to background fetch server config for MaxResumePct:', err);
-                                    });
-                                }
-                            } else if (id === 'ui-font-select') {
-                                layoutManager.setUiFont(newValue);
-                            } else if (id === 'jellyfin-fallback-font-select') {
-                                storage.setItem('pref:jellyfinFallbackFont', newValue);
-                                storage.flush();
-                                FontLoader.loadFont('fallback-font', true);
-                            } else if (id === 'text-scale-select') {
-                                layoutManager.setTextScale(parseFloat(newValue));
-                            } else if (id === 'display-scale-select') {
-                                layoutManager.setDisplayScale(newValue);
-                            } else if (id === 'media-rows-layout-select') {
-                                layoutManager.setMediaRowsLayout(newValue);
-                                const scaleMap = { expanded: '1.2', 'modern-posters': '1.2', modern: '1.2', expanding: '1', classic: '1' };
-                                if (scaleMap[newValue]) {
-                                    storage.setItem(`pref:${newValue === 'modern-posters' ? 'modernPosters' : newValue}CardSizeScale`, scaleMap[newValue]);
-                                }
-                                this._triggerHardReload();
-                            } else if (id === 'login-page-layout-select') {
-                                layoutManager.setLoginPageLayout(newValue);
-                                this._triggerHardReload();
-                            } else if (id === 'sidebar-layout-select') {
-                                layoutManager.setSidebarLayout(newValue);
-                                this._triggerHardReload();
-                            } else if (id === 'card-label-style-select' || id === 'card-label-align-select') {
-                                storage.setItem(settingConfig.key, newValue);
-                                document.documentElement.setAttribute(id === 'card-label-style-select' ? 'data-card-label-style' : 'data-card-label-align', newValue);
-                                focusManager.invalidateCache('home');
-                                focusManager.invalidateCache('settings-content');
-                            } else if (id === 'card-label-scale-select') {
-                                layoutManager.setCardLabelScale(parseFloat(newValue));
-                            } else if (id === 'hero-carousel-vignette-select') {
-                                layoutManager.setHeroVignette(newValue);
-                            } else if (id === 'sidebar-mode-select') {
-                                storage.setItem('pref:sidebarMode', newValue);
-                                document.body.classList.toggle('sidebar-mode-hidden', newValue === 'hidden');
-                                document.body.classList.toggle('sidebar-mode-collapsed', newValue === 'collapsed');
-                                if (newValue === 'collapsed') {
-                                    storage.setItem('pref:showCollapsedLibraryIcons', 'true');
-                                    storage.setItem('pref:hideSidebarLibraryHeader', 'true');
-                                    eventBus.emit('prefChanged:showCollapsedLibraryIcons', true);
-                                    eventBus.emit('prefChanged:hideSidebarLibraryHeader', true);
-                                }
-                                eventBus.emit('pref:sidebarMode', newValue);
-                                focusManager.invalidateCache('sidebar');
-                                focusManager.invalidateCache('home');
-                            } else if (id === 'icon-style-select') {
-                                setIconStyle(newValue);
-                                this._triggerHardReload();
-                            } else if (id === 'icon-variant-select') {
-                                storage.setItem('pref:iconVariant', newValue);
-                                this._triggerHardReload();
-                            } else if (settingConfig.type === 'local') {
-                                storage.setItem(settingConfig.key, newValue);
-
-                                const homepageLocalKeys = [
-                                    'pref:homeRowsLimit',
-                                    'pref:nextUpMaxDays',
-                                    'pref:heroCarouselStyle',
-                                    'pref:heroCarouselIndicatorStyle',
-                                    'pref:heroCarouselCount',
-                                    'pref:heroCarouselInterval'
-                                ];
-                                if (homepageLocalKeys.includes(settingConfig.key)) {
-                                    log.info(`Invalidating home page cache due to local setting change: ${settingConfig.key}`);
-                                    state.delete('home:pageCache');
-                                }
-
-                                if (settingConfig.key === 'pref:heroCarouselIndicatorStyle') {
-                                    const animToggleItem = this.$('#hero-carousel-indicator-animation-item');
-                                    if (animToggleItem) {
-                                        const isCarouselEnabled = storage.getItem('pref:heroCarousel') !== 'false';
-                                        animToggleItem.style.display = isCarouselEnabled && newValue === 'progress' ? '' : 'none';
-                                    }
-                                    focusManager.invalidateCache('settings-content');
-                                }
-
-                                if (settingConfig.key === 'pref:heroCarouselStyle') {
-                                    const blurhashFillItem = this.$('#hero-carousel-blurhash-fill-item');
-                                    if (blurhashFillItem) {
-                                        const isCarouselEnabled = storage.getItem('pref:heroCarousel') !== 'false';
-                                        blurhashFillItem.style.display = isCarouselEnabled && newValue === 'immersive-performance' ? '' : 'none';
-                                    }
-                                    focusManager.invalidateCache('settings-content');
-                                }
-
-                                if (settingConfig.key === 'pref:libraryPageSize') {
-                                    log.info(`Invalidating library caches due to libraryPageSize change: ${newValue}`);
-                                    state.clearByPrefix('library:state');
-                                    if (router && typeof router.clearHistoryState === 'function') {
-                                        router.clearHistoryState('/library');
-                                    }
-                                    const alphaScrollItem = this.$('#alpha-picker-scroll-mode-item');
-                                    if (alphaScrollItem) {
-                                        alphaScrollItem.style.display = String(newValue) === 'unlimited' ? '' : 'none';
-                                        focusManager.invalidateCache('settings-content');
-                                    }
-                                    eventBus.emit('pref:libraryPageSize:changed', newValue);
-                                }
-
-                                if (
-                                    settingConfig.key === 'pref:defaultLibraryViewMode' ||
-                                    settingConfig.key === 'pref:defaultLibraryGridColumns'
-                                ) {
-                                    log.info(`Invalidating library caches due to default view layout change: ${settingConfig.key}=${newValue}`);
-                                    state.clearByPrefix('library:state');
-                                    if (router && typeof router.clearHistoryState === 'function') {
-                                        router.clearHistoryState('/library');
-                                    }
-                                    eventBus.emit(settingConfig.key + ':changed', newValue);
-                                }
-
-                                if (settingConfig.key === 'pref:detailsLayout' || settingConfig.key === 'pref:seasonEpisodeDetailsLayout') {
-                                    this._updateDetailsTitleStyleVisibility();
-                                }
-
-                                if (settingConfig.triggerEvent) {
-                                    eventBus.emit(settingConfig.key, newValue);
-                                }
-
-                                if (
-                                    settingConfig.key === 'pref:mediaRowsLayout' ||
-                                    settingConfig.key === 'pref:loginPageLayout' ||
-                                    settingConfig.key === 'layout_direction' ||
-                                    settingConfig.key === 'app_language' ||
-                                    settingConfig.key === 'pref:classicCardSizeScale' ||
-                                    settingConfig.key === 'pref:modernCardSizeScale' ||
-                                    settingConfig.key === 'pref:expandedCardSizeScale' ||
-                                    settingConfig.key === 'pref:modernPostersCardSizeScale'
-                                ) {
-                                    this._triggerHardReload();
-                                }
-
-                                if (settingConfig.key === 'pref:libraryThumbMode') {
-                                    const libraryThumbContainer = this.$('#library-thumb-regenerate-container');
-                                    if (libraryThumbContainer) {
-                                        libraryThumbContainer.style.display = newValue === 'static' ? '' : 'none';
-                                        focusManager.invalidateCache('settings-content');
-                                    }
-                                    storage.clearByPrefix('libThumb:');
-                                    const pageCache = state.get('home:pageCache');
-                                    if (pageCache && pageCache.thumbUrls) {
-                                        pageCache.thumbUrls = {};
-                                        state.set('home:pageCache', pageCache);
-                                    }
-                                    CardRenderer.clearCache();
-                                }
-
-                                if (id === 'screensaver-type-select') {
-                                    const isBackdrop = newValue === 'backdrop';
-                                    ['screensaver-dim-item', 'screensaver-hide-text-item', 'screensaver-include-music-item'].forEach((itemId) => {
-                                        const el = document.getElementById(itemId);
-                                        if (el) el.classList.toggle('hidden', !isBackdrop);
-                                    });
-                                    focusManager.invalidateCache('settings-content');
-                                }
-                            } else if (settingConfig.type === 'service') {
-                                imageService.setPreset(newValue);
-                            } else if (settingConfig.type === 'details-service') {
-                                imageService.setDetailsPreset(newValue);
-                            } else if (settingConfig.type === 'player') {
-                                const floatKeys = ['webosBufferGate', 'subtitleAssPrescaleFactor'];
-                                const intKeys = [
-                                    'skipForwardLength',
-                                    'skipBackLength',
-                                    'resumeRewindLength',
-                                    'maxBitrateInternet',
-                                    'webosStallRecovery',
-                                    'webosSegmentLength',
-                                    'tizenInitialBuffer',
-                                    'tizenResumeBuffer',
-                                    'tizenSegmentLength',
-                                    'html5MaxBufferLength',
-                                    'html5MaxMaxBufferLength',
-                                    'html5SegmentLength',
-                                    'playQueueEpisodeLimit'
-                                ];
-
-                                let val = newValue;
-                                if (floatKeys.includes(settingConfig.key)) {
-                                    val = parseFloat(newValue);
-                                } else if (intKeys.includes(settingConfig.key)) {
-                                    val = parseInt(newValue, 10);
-                                }
-                                PlayerSettings.set(settingConfig.key, val);
-
-                                if (settingConfig.key === 'playerBackend') {
-                                    this._switchTab('player', false, true);
-                                    return;
-                                }
-
-                                if (settingConfig.key === 'assRenderer') {
-                                    const isLibass = newValue === 'libass-wasm';
-                                    const animContainer = this.$('#ass-drop-animations-container');
-                                    const scaleContainer = this.$('#ass-prescale-factor-container');
-                                    if (animContainer) animContainer.style.display = isLibass ? '' : 'none';
-                                    if (scaleContainer) scaleContainer.style.display = isLibass ? '' : 'none';
-                                    focusManager.invalidateCache('settings-content');
-                                }
-
-                                const CLEAR_CAPS_KEYS = new Set([
-                                    'maxResolution', 'maxBitrateInternet', 'pgsPlaybackMode',
-                                    'webosSegmentLength', 'tizenSegmentLength', 'html5SegmentLength',
-                                    'enableHEVC', 'enableAV1', 'enableVP9', 'enableHDR',
-                                    'enableDolbyVision', 'enableDts', 'enableTrueHd',
-                                    'enableEac3', 'enableMp2', 'transcodeAudioCodec', 'forceDirectPlay'
-                                ]);
-                                if (CLEAR_CAPS_KEYS.has(settingConfig.key)) {
-                                    clearCapabilitiesCache();
-                                }
-
-                                if (id === 'time-source-select') {
-                                    const tzContainer = document.getElementById('time-timezone-item');
-                                    if (tzContainer) {
-                                        tzContainer.style.display = newValue === 'server' ? '' : 'none';
-                                        focusManager.invalidateCache('settings-content');
-                                    }
-                                }
-
-                                if (id === 'subtitle-bg-select') {
-                                    const opacityContainer = document.getElementById('subtitle-bg-opacity-container');
-                                    if (opacityContainer) {
-                                        opacityContainer.style.display = (newValue === 'transparent' || newValue === 'none') ? 'none' : '';
-                                        focusManager.invalidateCache('settings-content');
-                                    }
-                                }
-
-                                if (id === 'subtitle-position-select') {
-                                    const customPosContainer = document.getElementById('subtitle-custom-pos-container');
-                                    if (customPosContainer) {
-                                        customPosContainer.style.display = newValue === 'custom' ? '' : 'none';
-                                        focusManager.invalidateCache('settings-content');
-                                    }
-                                }
-
-                                if (id === 'subtitle-size-select') {
-                                    const customSizeContainer = document.getElementById('subtitle-custom-size-container');
-                                    if (customSizeContainer) {
-                                        customSizeContainer.style.display = newValue === 'custom' ? '' : 'none';
-                                        focusManager.invalidateCache('settings-content');
-                                    }
-                                }
-
-                                if (id === 'subtitle-shadow-select') {
-                                    const isBorder = newValue === 'border' || newValue === 'uniform_border';
-                                    const isNoneOrBorder = newValue === 'none' || newValue === 'border';
-                                    const borderWidthContainer = document.getElementById('subtitle-border-width-container');
-                                    if (borderWidthContainer) borderWidthContainer.style.display = isBorder ? '' : 'none';
-                                    const borderOpacityContainer = document.getElementById('subtitle-border-opacity-container');
-                                    if (borderOpacityContainer) borderOpacityContainer.style.display = isBorder ? '' : 'none';
-                                    const opacityContainer = document.getElementById('subtitle-shadow-opacity-container');
-                                    if (opacityContainer) opacityContainer.style.display = isNoneOrBorder ? 'none' : '';
-                                    const blurContainer = document.getElementById('subtitle-shadow-blur-container');
-                                    if (blurContainer) blurContainer.style.display = isNoneOrBorder ? 'none' : '';
-                                    focusManager.invalidateCache('settings-content');
-                                }
-
-                                if (settingConfig.key === 'subtitleFont' || settingConfig.key === 'subtitleFontAss') {
-                                    storage.flush();
-                                    if (newValue) {
-                                        FontLoader.loadFont(newValue, true).then((loaded) => {
-                                            log.debug(`Font loaded status: ${newValue} = ${loaded}`);
-                                        });
-                                    }
-                                }
-                            } else if (settingConfig.type === 'debug') {
-                                storage.setItem(settingConfig.key, newValue);
-                                if (settingConfig.key === 'debug_width') debugOverlay.setWidth(newValue);
-                                else if (settingConfig.key === 'debug_height') debugOverlay.setHeight(newValue);
-                                else if (settingConfig.key === 'debug_position') debugOverlay.setPosition(newValue);
+                        if (id === 'ui-font-select') {
+                            layoutManager.setUiFont(newValue);
+                        } else if (id === 'subtitle-font-select' || id === 'subtitle-font-ass-select') {
+                            const playerKey = id === 'subtitle-font-select' ? 'subtitleFont' : 'subtitleFontAss';
+                            PlayerSettings.set(playerKey, newValue);
+                            storage.flush();
+                            if (newValue && typeof FontLoader !== 'undefined') {
+                                FontLoader.loadFont(newValue, true);
                             }
                         }
-
-                        log.debug(`Setting ${id} saved: ${newValue}`);
                     },
                     id
                 );
@@ -1931,11 +1352,6 @@ class SettingsPage extends Page {
         });
     }
 
-    /**
-     * Display dedicated Favorite Languages management modal with search,
-     * quick popular language chips, full culture/UI list, and instant toggle states.
-     * Delegated to FavoriteLanguagesModal controller.
-     */
     _showFavoriteLanguagesModal() {
         if (this.favoriteLanguagesModal) {
             this.favoriteLanguagesModal.open(cachedCultures);

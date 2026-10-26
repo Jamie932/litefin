@@ -1223,9 +1223,12 @@ class HomePage extends Page {
                 eagerCount = targetIndex + 1;
             }
 
-            // Slice out the eager descriptors and queue the remaining for deferred loading
+            // Slice out the eager descriptors and queue the remaining for deferred loading.
+            // Filter out any descriptor the registry already rendered (e.g. rows
+            // restored from the page cache) — leaving them in the queue creates
+            // dead duplicates that waste batch cycles and poison autofocus.
             const eagerDescriptors = descriptors.slice(0, eagerCount);
-            this._deferredDescriptors = descriptors.slice(eagerCount);
+            this._deferredDescriptors = descriptors.slice(eagerCount).filter((d) => !this._rowRegistry.has(d.id));
             this._nextDeferredDescIndex = 0;
 
             // ─── Step 5.5: Insert skeletons in exact natural order ───────────
@@ -1462,6 +1465,8 @@ class HomePage extends Page {
      * block other rows from appearing.
      *
      * @param {RowDescriptor} descriptor
+     * @returns {Promise<boolean>} true when the row was actually rebuilt from
+     *   fresh data this call; false when it was skipped (duplicate, empty, or failed)
      */
     async _loadAndRenderRow(descriptor) {
         if (!this._isMounted) return false;
@@ -1725,8 +1730,14 @@ class HomePage extends Page {
         for (const descriptor of batch) {
             if (!this._isMounted) break;
             try {
-                await this._loadAndRenderRow(descriptor);
-                if (!firstRenderedDescId) firstRenderedDescId = descriptor.id;
+                await this._loadAndRenderRow(descriptor).then((rendered) => {
+                    // Only autofocus to rows that were actually rendered in THIS
+                    // batch. Skipped duplicates (already in the registry), empty
+                    // rows, and failures must not steal the D-pad focus — that
+                    // previously caused pressing Down at the boundary to teleport
+                    // focus UP into an already-rendered row.
+                    if (rendered && !firstRenderedDescId) firstRenderedDescId = descriptor.id;
+                });
 
                 // Yield to the browser between row renders
                 await new Promise((resolve) => requestAnimationFrame(resolve));

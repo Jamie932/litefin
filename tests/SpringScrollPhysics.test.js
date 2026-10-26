@@ -517,8 +517,11 @@ test('ScrollController: settle timeout runs on integrated sim-time — slow fram
             container,
             track: null,
             currentScroll: 0,
-            targetScroll: 500,
-            duration: 180,
+            // Long, slow hop: at 64ms sim/frame six frames only integrate
+            // 320ms of a 3000ms settle budget, so the engine cannot have
+            // legitimately finished — only a wall-clock timeout would.
+            targetScroll: 2000,
+            duration: 3000,
             isVertical: true,
             scrollMode: 'native'
         });
@@ -538,14 +541,14 @@ test('ScrollController: settle timeout runs on integrated sim-time — slow fram
         pump(6);
 
         // With the wall-clock bug, frame 2 (elapsed 1300ms wall) already
-        // finalized with the engine ~460px short of target.
+        // finalized with the engine ~1800px short of target.
         assert.ok(
             controller._verticalScrollState !== null,
             'finalize must NOT fire before the engine has integrated SPRING_MAX_DURATION_MS of simulation time'
         );
         assert.ok(
-            !writes.some((w) => w >= 499),
-            'the engine must still be close to its origin — no teleport to the target across slow frames'
+            !writes.some((w) => w >= 1999),
+            'the engine must still be far from its origin — no teleport to the target across slow frames'
         );
 
         // No single write may jump most of the hop in one stroke after the
@@ -557,8 +560,8 @@ test('ScrollController: settle timeout runs on integrated sim-time — slow fram
             );
         }
 
-        // Pump until the engine settles naturally (sim-time budget is ~1200ms;
-        // at 64ms/frame that is < 20 frames).
+        // Pump until the engine settles naturally (sim-time budget is 1200ms;
+        // at 64ms/frame that is ~19-21 frames).
         let guard = 0;
         while (guard < 120) {
             if (controller._verticalScrollState === null) break;
@@ -566,7 +569,7 @@ test('ScrollController: settle timeout runs on integrated sim-time — slow fram
             pump(1);
         }
         finalWrite = writes[writes.length - 1];
-        assert.strictEqual(finalWrite, 500, 'the engine must land exactly on the target');
+        assert.strictEqual(finalWrite, 2000, 'the engine must land exactly on the target');
 
         // Convergence validity: all writes approach from below (no bounce past
         // the target), and the finalize snap is sub-pixel-close to the last
@@ -575,6 +578,91 @@ test('ScrollController: settle timeout runs on integrated sim-time — slow fram
     } finally {
         globalThis.requestAnimationFrame = realRaf;
         // scrub the singleton axis slot in case the run aborted early
+        scrollController._verticalScrollState = null;
+        scrollController._verticalScrollAnimationId = null;
+    }
+});
+
+/**
+ * ============================================================================
+ * Terminal glide — the exponential tail must never become a creep
+ * ============================================================================
+ * A critically damped spring spends the last third of a hop below ~1px/frame:
+ * the scroll appears to stop, then creeps the remaining 15-20px for hundreds
+ * of ms. Perceptually the animation "splits in two" with a hitch. The loop
+ * must hand the closing phase to a constant-deceleration glide once the
+ * remaining distance enters the glide band, keeping visible speed until
+ * touchdown and landing exactly on the target.
+ */
+test('ScrollController: terminal glide closes the last stretch at perceptible speed with no sub-pixel creep', () => {
+    const pending = [];
+    const realRaf = globalThis.requestAnimationFrame;
+    try {
+        globalThis.requestAnimationFrame = (cb) => {
+            pending.push(cb);
+            return pending.length;
+        };
+
+        const controller = new ScrollController();
+        const writes = [];
+        const container = {
+            style: {},
+            get scrollTop() {
+                return writes.length ? writes[writes.length - 1] : 0;
+            },
+            set scrollTop(v) {
+                writes.push(v);
+            },
+            get scrollLeft() {
+                return 0;
+            },
+            set scrollLeft(v) {
+                void v;
+            }
+        };
+
+        controller._springScrollTo({
+            stateKey: '_verticalScrollState',
+            animIdKey: '_verticalScrollAnimationId',
+            container,
+            track: null,
+            currentScroll: 0,
+            targetScroll: 342,
+            duration: 180,
+            isVertical: true,
+            scrollMode: 'native'
+        });
+
+        // Continuous 60Hz frames at 16.67ms
+        let t = 0;
+        let guard = 0;
+        while (controller._verticalScrollState !== null && guard < 120) {
+            const cb = pending.shift();
+            if (!cb) break;
+            cb(t);
+            t += 16.67;
+            guard++;
+        }
+        assert.ok(guard < 120, 'the animation must settle on its own');
+
+        // The very last write is the exact target.
+        assert.strictEqual(writes[writes.length - 1], 342, 'must land exactly on target');
+
+        // NO CREEP: count write steps that move < 1px while more than 3px of
+        // travel remain. The exponential engine needed 4-6 such steps; after
+        // the glide handover at most 1 may occur (the settle tail).
+        let creepSteps = 0;
+        for (let i = 1; i < writes.length - 1; i++) {
+            const step = Math.abs(writes[i] - writes[i - 1]);
+            const remaining = Math.abs(342 - writes[i]);
+            if (step < 1 && remaining > 3) creepSteps++;
+        }
+        assert.ok(
+            creepSteps === 0,
+            `the tail must never creep below 1px/frame with distance left (saw ${creepSteps} creep steps)`
+        );
+    } finally {
+        globalThis.requestAnimationFrame = realRaf;
         scrollController._verticalScrollState = null;
         scrollController._verticalScrollAnimationId = null;
     }

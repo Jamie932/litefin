@@ -120,6 +120,19 @@ export const SPRING_SETTLE_VELOCITY_PX_MS = 0.015;
 export const PHYSICS_SETTLE_DISTANCE_PX = 0.5;
 
 /**
+ * Terminal glide band for engines with exponential tails (spring, chase,
+ * fling). Once the remaining distance enters this zone the loop hands the
+ * closing phase over to a constant-deceleration ease-out that reaches the
+ * target in 2·rem/v time, keeping visible speed in the perceptible band
+ * until touchdown. Without it a critically damped spring spends the last
+ * third of the animation below ~1px/frame — visually "done", then creeping
+ * for hundreds of ms (the post-scroll "hitch in two parts" on slow panels).
+ */
+export const GLIDE_ZONE_FRACTION = 0.25;
+export const GLIDE_ZONE_MAX_PX = 90;
+export const GLIDE_FALLBACK_SPEED_PX_MS = 0.5;
+
+/**
  * Absolute animation timeout (ms). Safety net for pathological retarget
  * storms and tiny residual demands that technically equal the thresholds.
  *

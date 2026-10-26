@@ -39,7 +39,10 @@ import {
     CHASE_TAU_FACTOR,
     RAIL_DECEL_ZONE_FRACTION,
     FLING_VELOCITY_MULTIPLIER,
-    PHYSICS_SETTLE_DISTANCE_PX
+    PHYSICS_SETTLE_DISTANCE_PX,
+    GLIDE_ZONE_FRACTION,
+    GLIDE_ZONE_MAX_PX,
+    GLIDE_FALLBACK_SPEED_PX_MS
 } from './SpringPhysics.js';
 
 // ============================================================================
@@ -981,9 +984,15 @@ class ScrollController {
                 return;
             }
             // VELOCITY CONTINUITY: re-aim without touching current (x, v).
-            // Fresh settle budget so long re-aims aren't cut by the timeout.
+            // Fresh settle budget and glide band for long re-aims.
             existing.target = targetScroll;
             existing.startTime = null;
+            existing.elapsed = 0;
+            existing.glide = null;
+            existing.glideZone = Math.min(
+                GLIDE_ZONE_MAX_PX,
+                Math.abs(existing.target - existing.x) * GLIDE_ZONE_FRACTION
+            );
             // Rail/fling derive their speed from remaining distance — refresh.
             if (existing.engine === 'rail') {
                 this._refreshRailState(existing, duration);
@@ -1160,6 +1169,9 @@ class ScrollController {
     _createPhysicsState({ engine, axis, container, track, scrollMode, current, target, duration, _write, _finalize }) {
         const distance = target - current;
         const durationFloor = Math.max(duration || 0, SPRING_MIN_DURATION_MS);
+        // Engines with exponential tails get a terminal glide band; rail
+        // already decelerates linearly, so it never needs the handover.
+        const glideZone = engine === 'rail' ? 0 : Math.min(GLIDE_ZONE_MAX_PX, Math.abs(distance) * GLIDE_ZONE_FRACTION);
         const base = {
             physics: true,
             engine,
@@ -1173,6 +1185,8 @@ class ScrollController {
             startTime: null,
             lastFrameTime: null,
             elapsed: 0,
+            glide: null,
+            glideZone,
             _write,
             _finalize
         };
@@ -1276,12 +1290,33 @@ class ScrollController {
             // finalize() snap while the physics was still tens of pixels short
             // of the target — the visible post-scroll "nudge" (20-30px jump) on
             // slow Tizen hardware. Re-anchoring after a retarget restarts the
-            // budget, preserving the original "fresh settle budget" intent.
-            if (s.startTime === null) {
-                s.startTime = time;
-                s.elapsed = 0;
-            }
+            // budget (retarget resets elapsed), preserving the original
+            // "fresh settle budget" intent.
             s.elapsed += dt;
+
+            if (s.glide) {
+                // TERMINAL GLIDE: constant-deceleration ease-out quadratic to
+                // the target. Exponential tails fall below ~1px/frame for the
+                // last third of a hop — motion appears to stop, then creeps
+                // the remainder (perceived 2-part hitch on slow panels). The
+                // glide keeps visible speed from vEntry down to 0 exactly at
+                // the target within 2·rem/v of sim time.
+                const f = Math.min((s.elapsed - s.glide.start) / s.glide.dur, 1);
+                const eased = 1 - (1 - f) * (1 - f);
+                s.x = s.glide.x0 + (s.target - s.glide.x0) * eased;
+                // Snap bittersweet settle criterion while gliding is disabled —
+                // only the landing (f=1) or the timeout may end the state.
+                s._write(s.x);
+                if (f >= 1 || s.elapsed >= SPRING_MAX_DURATION_MS) {
+                    s._finalize(s.target);
+                    this[animIdKey] = null;
+                    this[stateKey] = null;
+                    this._checkScrollFinished();
+                    return;
+                }
+                this[animIdKey] = requestAnimationFrame(animate);
+                return;
+            }
 
             while (dt > 0) {
                 const h = Math.min(dt, s.engine === 'spring' ? SPRING_SUBSTEP_MS : 16);
@@ -1291,6 +1326,17 @@ class ScrollController {
                 dt -= h;
             }
             s._write(s.x);
+
+            // Glide handover: distance remaining inside the glide band and
+            // still moving toward the target → replace the exponential tail.
+            const remaining = Math.abs(s.target - s.x);
+            if (remaining > 0 && remaining <= s.glideZone && !s.glide) {
+                const vEntry = Math.abs(s.v);
+                // Guarantee a perceptible average closing speed even when the
+                // handover happens after the spring has nearly stopped.
+                const vGlide = Math.max(vEntry, 2 * GLIDE_FALLBACK_SPEED_PX_MS);
+                s.glide = { x0: s.x, dur: (2 * remaining) / vGlide, start: s.elapsed };
+            }
 
             const settled = this._isPhysicsSettled(s);
 

@@ -1464,18 +1464,21 @@ class HomePage extends Page {
      * @param {RowDescriptor} descriptor
      */
     async _loadAndRenderRow(descriptor) {
-        if (!this._isMounted) return;
+        if (!this._isMounted) return false;
 
         // Defensive guard: if row is already fully rendered in the registry, avoid duplicate load
         if (this._rowRegistry.has(descriptor.id)) {
-            return;
+            return false;
         }
 
         try {
-            // Fetch this row's data via its individual fetch function
-            const items = await descriptor.fetchFn();
+            // Fetch this row's data via its individual fetch function.
+            // A background prefetch (see _prefetchRow) may already have the request
+            // in flight — reuse that promise so the network round-trip overlaps
+            // with whatever triggered this load instead of restarting from zero.
+            const items = await (descriptor._prefetchPromise || descriptor.fetchFn());
 
-            if (!this._isMounted) return;
+            if (!this._isMounted) return false;
 
             // If the fetch returned no items, remove the skeleton placeholder
             if (!items || items.length === 0) {
@@ -1497,7 +1500,7 @@ class HomePage extends Page {
                         this._relinkAdjacentSections(container, firstRow, firstRowId);
                     }
                 }
-                return;
+                return false;
             }
 
             // Find the placeholder and replace it with a live row
@@ -1515,6 +1518,7 @@ class HomePage extends Page {
                 }, 200);
             }
             this._checkFocusRestoration(descriptor.id, true);
+            return true;
         } catch (error) {
             log.error(`Failed to load row "${descriptor.id}"`, error);
 
@@ -1524,7 +1528,31 @@ class HomePage extends Page {
                 placeholder.remove();
             }
             this._checkFocusRestoration(descriptor.id, false);
+            return false;
         }
+    }
+
+    /**
+     * Starts a single row's network fetch in the background WITHOUT touching the
+     * DOM or consuming the deferred queue. The resulting promise is cached on the
+     * descriptor so the later real load (_loadAndRenderRow) reuses it.
+     *
+     * This lets the network round-trip overlap with an in-flight scroll animation:
+     * the data can be fully received by the time the scroll settles, so the
+     * boundary keypress (D-pad past the last rendered row) no longer waits for a
+     * network request before focus can move.
+     *
+     * @param {RowDescriptor} descriptor
+     */
+    _prefetchRow(descriptor) {
+        if (descriptor._prefetchPromise) return descriptor._prefetchPromise;
+        descriptor._prefetchPromise = descriptor
+            .fetchFn()
+            .catch((err) => {
+                log.warn(`Prefetch failed for row "${descriptor.id}"`, err);
+                return null;
+            });
+        return descriptor._prefetchPromise;
     }
 
     /**
@@ -1638,9 +1666,18 @@ class HomePage extends Page {
         if (this._nextDeferredDescIndex >= this._deferredDescriptors.length) return;
 
         // If viewport is actively running a scroll animation and this isn't an explicit
-        // user navigation request (autoFocus), defer the batch until scrolling finishes.
-        // This keeps compositor frame rates steady at 60fps without background interruptions.
+        // user navigation request (autoFocus), DEFER THE RENDER — but still start the
+        // network fetch for the next batch right now so the slow HTTP round-trip
+        // overlaps with the scroll animation instead of delaying the boundary
+        // keypress that follows it. Rendering stays paused to keep the compositor
+        // frame budget clean at 60fps.
         if (!autoFocus && window.__scrollController && window.__scrollController.isAnimating) {
+            const peekStart = this._nextDeferredDescIndex;
+            const peekEnd = Math.min(peekStart + DEFERRED_BATCH_SIZE, this._deferredDescriptors.length);
+            const peekBatch = this._deferredDescriptors.slice(peekStart, peekEnd);
+            for (const d of peekBatch) {
+                this._prefetchRow(d);
+            }
             const onScrollFinish = () => {
                 eventBus.off('scroll:finished', onScrollFinish);
                 if (

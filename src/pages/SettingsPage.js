@@ -47,6 +47,7 @@ import { LoaderStyleModal } from './settings/modals/LoaderStyleModal.js';
 import { FavoriteLanguagesModal } from './settings/modals/FavoriteLanguagesModal.js';
 import { SelectionModal } from './settings/modals/SelectionModal.js';
 import { SettingsDropdownDispatcher } from './settings/controllers/SettingsDropdownDispatcher.js';
+import { SettingsSlider } from './settings/components/SettingsSlider.js';
 
 const log = logger.create('SettingsPage');
 
@@ -99,6 +100,7 @@ class SettingsPage extends Page {
         this.favoriteLanguagesModal = typeof FavoriteLanguagesModal !== 'undefined' ? new FavoriteLanguagesModal(this) : null;
         this.selectionModal = typeof SelectionModal !== 'undefined' ? new SelectionModal(this) : null;
         this.dropdownDispatcher = typeof SettingsDropdownDispatcher !== 'undefined' ? new SettingsDropdownDispatcher(this) : null;
+        this.sliderComponent = typeof SettingsSlider !== 'undefined' ? new SettingsSlider(this) : null;
     }
 
     async onInit() {
@@ -775,9 +777,15 @@ class SettingsPage extends Page {
         }
     }
 
+    /**
+     * Renders markup for a range slider input with track, fill, and value indicator.
+     * Delegated to the extracted SettingsSlider component.
+     */
     _renderSlider(id, value, min, max, step, unit = '%') {
-        const percent = ((value - min) / (max - min)) * 100;
-
+        if (this.sliderComponent) {
+            return this.sliderComponent.render(id, value, min, max, step, unit);
+        }
+        const percent = ((parseFloat(value) - parseFloat(min)) / (parseFloat(max) - parseFloat(min))) * 100;
         return `
             <div class="slider-wrapper">
                 <div class="slider-container">
@@ -800,78 +808,14 @@ class SettingsPage extends Page {
         `;
     }
 
+    /**
+     * Binds input listeners and visual progress synchronization to all settings sliders.
+     * Delegated to the extracted SettingsSlider component.
+     */
     _bindSliderEvents() {
-        const sliderMap = {
-            'subtitle-text-opacity': 'subtitleTextOpacity',
-            'subtitle-text-opacity-hdr': 'subtitleTextOpacityHdr',
-            'subtitle-pgs-opacity': 'subtitlePgsOpacity',
-            'subtitle-pgs-opacity-hdr': 'subtitlePgsOpacityHdr',
-            'subtitle-bg-opacity': 'subtitleBackgroundOpacity',
-            'subtitle-border-opacity': 'subtitleBorderOpacity',
-            'subtitle-shadow-opacity': 'subtitleDropShadowOpacity',
-            'subtitle-shadow-blur': 'subtitleDropShadowBlur',
-            'subtitle-custom-pos': 'subtitleVerticalPositionCustom',
-            'subtitle-font-scale': 'subtitleFontScale',
-            'subtitle-outline-thickness': 'subtitleOutlineThickness',
-            'subtitle-shadow-thickness': 'subtitleShadowThickness',
-            'subtitle-line-height': 'subtitleLineHeight',
-            'subtitle-letter-spacing': 'subtitleLetterSpacing',
-            'subtitle-bottom-offset': 'subtitleBottomOffset',
-            'subtitle-custom-size': 'subtitleSizeCustomValue',
-            'osd-track-menu-bg-opacity': 'osdTrackMenuBgOpacity',
-            'osd-gradient-opacity': 'osdGradientOpacity'
-        };
-
-        this.$$('.setting-slider').forEach((slider) => {
-            slider.addEventListener('input', (e) => {
-                const id = slider.id;
-                const value = e.target.value;
-                const key = sliderMap[id];
-                const unit = slider.dataset.unit || '%';
-
-                // Update value display
-                const valueDisplay = this.$(`#${id}-value`);
-                if (valueDisplay) {
-                    valueDisplay.textContent = `${value}${unit}`;
-                }
-
-                // Update slider fill visual
-                const percent = ((value - slider.min) / (slider.max - slider.min)) * 100;
-                const container = slider.closest('.slider-container');
-                if (container) {
-                    const track = container.querySelector('.slider-track');
-                    const fill = container.querySelector('.slider-fill');
-                    if (track) track.style.setProperty('--progress', `${percent}%`);
-                    if (fill) fill.style.width = `${percent}%`;
-                }
-
-                // Save setting
-                if (key) {
-                    const floatKeys = [
-                        'subtitleFontScale',
-                        'subtitleSizeCustomValue',
-                        'subtitleOutlineThickness',
-                        'subtitleShadowThickness',
-                        'subtitleLetterSpacing'
-                    ];
-                    const val = floatKeys.includes(key) ? parseFloat(value) : parseInt(value, 10);
-                    PlayerSettings.set(key, val);
-                }
-            });
-
-            // FORCE UPDATE ON INIT:
-            // Tizen sometimes misses the initial inline style paint or needs a layout trigger.
-            // We manually trigger the 'input' event logic (without saving) to ensure visuals are set.
-            const value = slider.value;
-            const percent = ((value - slider.min) / (slider.max - slider.min)) * 100;
-            const container = slider.closest('.slider-container');
-            if (container) {
-                const track = container.querySelector('.slider-track');
-                const fill = container.querySelector('.slider-fill');
-                if (track) track.style.setProperty('--progress', `${percent}%`);
-                if (fill) fill.style.width = `${percent}%`;
-            }
-        });
+        if (this.sliderComponent) {
+            this.sliderComponent.bindEvents();
+        }
     }
 
     _getFontDropdownOptions(id, options, currentValue) {

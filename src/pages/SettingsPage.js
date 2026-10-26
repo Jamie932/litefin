@@ -48,6 +48,7 @@ import { SelectionModal } from './settings/modals/SelectionModal.js';
 import { SettingsDropdownDispatcher } from './settings/controllers/SettingsDropdownDispatcher.js';
 import { SettingsSlider } from './settings/components/SettingsSlider.js';
 import { loadCultureOptions, getCachedCultures, getFontDropdownOptions, loadFallbackFontOptions } from './settings/helpers/SettingsFontOptions.js';
+import { SettingsResetController } from './settings/controllers/SettingsResetController.js';
 
 const log = logger.create('SettingsPage');
 
@@ -101,6 +102,7 @@ class SettingsPage extends Page {
         this.selectionModal = typeof SelectionModal !== 'undefined' ? new SelectionModal(this) : null;
         this.dropdownDispatcher = typeof SettingsDropdownDispatcher !== 'undefined' ? new SettingsDropdownDispatcher(this) : null;
         this.sliderComponent = typeof SettingsSlider !== 'undefined' ? new SettingsSlider(this) : null;
+        this.resetController = typeof SettingsResetController !== 'undefined' ? new SettingsResetController(this) : null;
     }
 
     async onInit() {
@@ -1151,40 +1153,22 @@ class SettingsPage extends Page {
         }
     }
 
+    /**
+     * Executes a true cold-start hard reload on smart TV WebViews.
+     * Strips hash fragments to ensure complete module re-initialization.
+     * Delegated to the extracted SettingsResetController.
+     */
     _triggerHardReload() {
-        /*
-         * ----------------------------------------------------------------
-         * Language/Layout changes need a TRUE hard reload.
-         *
-         * WHY window.location.reload() BREAKS ON TIZEN/WEBOS:
-         * On these platforms, reload() is a *soft* reload — the JS
-         * module cache is preserved. The 'app' singleton stays alive
-         * with _initialized=true, so App.init() exits early without
-         * ever calling i18n.init(). The dictionary stays {}, causing
-         * all i18n.t() calls to return raw key strings.
-         *
-         * FIX: Navigate to the app's root entry-point URL *without
-         * the hash fragment*. The WebView treats this as a fresh
-         * cold-start navigation, fully re-parsing and re-executing
-         * all JS modules from scratch — identical to a native restart.
-         * ----------------------------------------------------------------
-         */
-        storage.flush();
-
-        // Compute the base URL (strips the hash / current route)
-        const href = window.location.href;
-        const protocol = window.location.protocol;
-        let entryUrl;
-
-        if (protocol === 'file:') {
-            // file:// packaged app — strip everything from '#' onward
-            entryUrl = href.split('#')[0];
-        } else {
-            // http(s):// dev server — use origin + pathname (no hash)
-            entryUrl = window.location.origin + window.location.pathname;
+        if (this.resetController) {
+            this.resetController.triggerHardReload();
+            return;
         }
 
-        // Hard-navigate: forces a true cold-start re-init on all platforms
+        // Lightweight fallback for headless test runners
+        storage.flush();
+        const href = window.location.href;
+        const protocol = window.location.protocol;
+        const entryUrl = protocol === 'file:' ? href.split('#')[0] : window.location.origin + window.location.pathname;
         window.location.href = entryUrl;
     }
 

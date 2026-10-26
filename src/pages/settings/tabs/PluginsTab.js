@@ -13,6 +13,7 @@ import { pluginManager } from '../../../plugins/PluginManager.js';
 import { focusManager } from '../../../ui/FocusManager.js';
 import { i18n } from '../../../utils/i18n.js';
 import { logger } from '../../../utils/Logger.js';
+import { EXTERNAL_LINK_SVG } from '../../../utils/Icons.js';
 import { openExternalUrl } from '../modals/AboutDeviceSpecs.js';
 
 const log = logger.create('PluginsTab');
@@ -83,7 +84,7 @@ export class PluginsTab {
                     </div>
                     <!-- Quick-launch button opening Jellyfin Server Dashboard in a new window -->
                     <button class="btn btn-option btn-open-dashboard focusable" id="btn-open-dashboard" tabindex="0" data-focusable="true" title="${i18n.t('OpenJellyfinDashboard') || 'Open Jellyfin Dashboard'}">
-                        <svg class="btn-icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        ${EXTERNAL_LINK_SVG}
                         <span class="btn-label" data-i18n="OpenJellyfinDashboard">${i18n.t('OpenJellyfinDashboard') || 'Open Jellyfin Dashboard'}</span>
                     </button>
                 </div>

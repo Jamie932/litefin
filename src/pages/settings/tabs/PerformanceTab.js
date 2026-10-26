@@ -59,6 +59,7 @@ export class PerformanceTab {
             storage.getItem('pref:horizontalScrollMode') ||
             (platformInfo.isAndroid && !platformInfo.isAndroidTv ? 'native' : 'gpu');
         const scrollSmoothing = storage.getItem('pref:scrollSmoothingDuration') || 'current';
+        const scrollPhysics = storage.getItem('pref:scrollPhysics') || 'easing';
         const scrollAlignment = storage.getItem('pref:verticalScrollAlignment') || 'bottom';
         const libraryPageSize = storage.getItem('pref:libraryPageSize') || 50;
         const queueEpisodeLimit = PlayerSettings.get('playQueueEpisodeLimit') || 50;
@@ -96,6 +97,11 @@ export class PerformanceTab {
                 <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="ScrollSmoothingDuration">${i18n.t('ScrollSmoothingDuration') || 'Scroll Smoothing (Duration)'}</span><span class="setting-description" data-i18n="ScrollSmoothingDurationDescription">${i18n.t('ScrollSmoothingDurationDescription') || 'Configure animation duration and speed for vertical row navigation.'}</span></div>
                     <div class="setting-control">${this._renderDropdown('scroll-smoothing-duration-select', [{ value: 'instant', label: i18n.t('ScrollDurationInstant') || 'Instant (No Animation)' }, { value: 'current', label: i18n.t('ScrollDurationCurrent') || 'Fast (Default)' }, { value: 'smooth', label: i18n.t('ScrollDurationSmooth') || 'Smooth' }, { value: 'slower', label: i18n.t('ScrollDurationSlower') || 'Slower (Ultra Smooth)' }], scrollSmoothing)}</div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label"><span class="setting-name" data-i18n="ScrollPhysics">${i18n.t('ScrollPhysics') || 'Scroll Physics Engine'}</span><span class="setting-description" data-i18n="ScrollPhysicsDescription">${i18n.t('ScrollPhysicsDescription') || 'Apple-style spring scrolling adds true velocity-based motion with momentum glide and a soft damped settle. Disable to keep the classic easing curves.'}</span></div>
+                    <div class="setting-control">${this._renderDropdown('scroll-physics-select', [{ value: 'easing', label: i18n.t('ScrollPhysicsEasing') || 'Classic Easing (Default)' }, { value: 'spring', label: i18n.t('ScrollPhysicsSpring') || 'Spring (Apple-style)' }], scrollPhysics)}</div>
                 </div>
 
                 <div class="setting-item">

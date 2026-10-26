@@ -28,7 +28,7 @@ import { languageManager } from '../utils/LanguageManager.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
 import { webosAdapter } from '../webos/WebOSAdapter.js';
 import { eventBus } from '../core/EventBus.js';
-import { settingsIcons, setIconStyle } from '../utils/Icons.js';
+import { settingsIcons, setIconStyle, CHEVRON_RIGHT_SVG } from '../utils/Icons.js';
 import { toast } from '../ui/Toast.js';
 import { escapeHtml } from '../utils/Utils.js';
 import { watchProviderRegionName } from '../utils/WatchProviders.js';
@@ -305,9 +305,7 @@ class SettingsPage extends Page {
                                     <span class="menu-desc">${tab.desc}</span>
                                 </div>
                                 <span class="menu-chevron" aria-hidden="true">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M9 18l6-6-6-6"/>
-                                    </svg>
+                                    ${CHEVRON_RIGHT_SVG}
                                 </span>
                             </button>
                         `
@@ -1375,6 +1373,11 @@ class SettingsPage extends Page {
             'horizontal-scroll-mode-select': { key: 'pref:horizontalScrollMode', type: 'local', triggerEvent: true },
             'scroll-smoothing-duration-select': {
                 key: 'pref:scrollSmoothingDuration',
+                type: 'local',
+                triggerEvent: true
+            },
+            'scroll-physics-select': {
+                key: 'pref:scrollPhysics',
                 type: 'local',
                 triggerEvent: true
             },

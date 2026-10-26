@@ -17,6 +17,7 @@ import { eventBus } from '../../../core/EventBus.js';
 import { i18n } from '../../../utils/i18n.js';
 import { escapeHtml } from '../../../utils/Utils.js';
 import { logger } from '../../../utils/Logger.js';
+import { CHECKMARK_SVG } from '../../../utils/Icons.js';
 
 const log = logger.create('LoaderStyleModal');
 
@@ -222,9 +223,7 @@ export class LoaderStyleModal {
                                 </div>
                                 <span class="loader-style-option-pill">${escapeHtml(s.badge)}</span>
                                 <span class="loader-style-check-icon">
-                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                                    </svg>
+                                    ${CHECKMARK_SVG}
                                 </span>
                             </button>
                         `

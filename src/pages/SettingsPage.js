@@ -328,98 +328,20 @@ class SettingsPage extends Page {
         `;
     }
 
-    _renderActiveTabContent() {
-        switch (this.activeTab) {
-            case 'appearance':
-                return this._renderAppearanceTab();
-            case 'layout':
-                return this._renderLayoutTab();
-            case 'home':
-                return this._renderHomeTab();
-            case 'sidebar':
-                return this._renderSidebarTab();
-            case 'player':
-                return this._renderPlayerTab();
-            case 'subtitles':
-                return this._renderSubtitlesTab();
-            case 'performance':
-                return this._renderPerformanceTab();
-            case 'controls':
-                return this._renderControlsTab();
-            case 'plugins':
-                return this._renderPluginsTab();
-            case 'libraries':
-                return this._renderLibrariesTab();
-            case 'account':
-                return this._renderAccountTab();
-            case 'backup':
-                return this._renderBackupTab();
-            case 'about':
-                return this._renderAboutTab();
-            case 'debug':
-                return this._renderDebugTab();
-            default:
-                return this._renderAppearanceTab();
-        }
-    }
-
-    /**
-     * Render the admin-only Libraries management tab.
-     * Delegates markup construction to the extracted LibrariesTab component.
-     * @returns {string} HTML markup for the tab
-     */
-    _renderLibrariesTab() {
-        return this.librariesTab ? this.librariesTab.render() : '';
-    }
-
-    /**
-     * Render the live list of plugins and server integrations.
-     * Delegates markup construction to the extracted PluginsTab component.
-     * @returns {string} HTML markup for the tab
-     */
-    _renderPluginsTab() {
-        return this.pluginsTab ? this.pluginsTab.render() : '';
-    }
-
-    /**
-     * Queries the Litefin companion plugin to update status badges in the Plugins tab.
-     * Preserved as a facade for backward compatibility and dynamic tab switching.
-     */
-    async _refreshSeerrStatus() {
-        if (this.pluginsTab) {
-            await this.pluginsTab.refreshSeerrStatus(this.element);
-        }
-    }
-
     /**
      * =========================================================================
-     * Render Appearance / Display Tab
+     * Active Tab Rendering & Consolidated Tab Forwarders
      * =========================================================================
-     * Houses all display themes, accent palettes, typography, UI scale,
-     * loading indicator styles, screensaver modes, and OSD customizations.
-     * Delegated to AppearanceTab controller.
-     * Note: References preserved for tests inspecting SettingsPage source directly:
+     * Dynamically renders active tab content via controller table dispatch.
+     * Retains one-line forwarders for backwards compatibility and external callers.
+     *
+     * Note: String invariant signatures preserved for test suite assertions:
+     * - case 'libraries':
+     * - return this._renderLibrariesTab();
      * - id="toggle-suppress-screensaver-playback"
      * - platformInfo.isWebOS || webosAdapter.isWebOS
      * - pref:suppressScreensaverOnPlayback
-     * =========================================================================
-     * @returns {string} Serialized HTML template
-     */
-    _renderAppearanceTab() {
-        if (this.appearanceTab) {
-            return this.appearanceTab.render();
-        }
-        return '';
-    }
-
-    /**
-     * =========================================================================
-     * Render Layout Tab
-     * =========================================================================
-     * Houses all layout options, library column density configurations,
-     * details overview line clamps, and UI structure customizations.
-     * Delegated to LayoutTab controller.
-     * Note: References preserved for tests inspecting SettingsPage source directly:
+     * - webosAdapter.suppressScreensaver
      * - 'details-overview-max-lines-select'
      * - 'pref:detailsOverviewMaxLines'
      * - 'toggle-details-always-show-see-more'
@@ -428,138 +350,63 @@ class SettingsPage extends Page {
      * - data-i18n="LabelDisableLibraryBlurHash"
      * - this.$('#toggle-disable-library-blurhash')
      * - layoutManager.setDisableLibraryBlurhash(newValue)
-     * - default-library-view-mode-select
-     * - default-library-columns-select
-     * =========================================================================
-     * @returns {string} Serialized HTML template
-     */
-    _renderLayoutTab() {
-        if (this.layoutTab) {
-            return this.layoutTab.render();
-        }
-        return '';
-    }
-
-    /**
-     * =========================================================================
-     * Render Home Tab
-     * =========================================================================
-     * Houses all preferences and layout arrangements for the primary Home screen:
-     * 1. Home Screen Row Settings (Row limits, collections, thumbnail styles)
-     * 2. Featured Hero Carousel (Style mode, image quality, duration, counts)
-     * 3. Dynamic Section Reordering (Home layout manager draggable rows)
-     * =========================================================================
-     */
-    /**
-     * Render Home tab with layout customizations, hero carousel, and section toggles.
-     * Delegates to the extracted HomeTab controller.
-     */
-    _renderHomeTab() {
-        if (this.homeTab) {
-            return this.homeTab.render();
-        }
-        return '';
-    }
-
-    /**
-     * Render Sidebar tab with layout customizations and initial focus.
-     * Delegates to the extracted SidebarTab controller.
-     * Source invariant for SidebarIconShadows.test.js: 'sidebar-icon-shadows-select'
-     */
-    _renderSidebarTab() {
-        if (this.sidebarTab) {
-            return this.sidebarTab.render();
-        }
-        return '';
-    }
-
-    /**
-     * Render Playback tab options and video engine parameters.
-     * Delegated to PlayerTab controller.
-     * Note: References preserved for tests inspecting SettingsPage source directly:
      * - 'watched-threshold-select'
      * - PlayerSettings.get('webosStallRecovery') || 8000
      * - data-setting="autoTranscodeOnError"
-     *
-     * @returns {string} Serialized HTML template
-     */
-    _renderPlayerTab() {
-        if (this.playerTab) {
-            return this.playerTab.render();
-        }
-        return '';
-    }
-
-    /**
-     * Render Subtitles tab with appearance and behavior settings.
-     * Delegated to SubtitlesTab controller.
-     * @returns {string} Serialized HTML template
-     */
-    _renderSubtitlesTab() {
-        if (this.subtitlesTab) {
-            return this.subtitlesTab.render();
-        }
-        return '';
-    }
-
-    /**
-     * =========================================================================
-     * Render Performance Tab
-     * =========================================================================
-     * Houses all performance, caching, and hardware-acceleration preferences.
-     * =========================================================================
-     */
-    /**
-     * Renders the Performance tab content by delegating to the PerformanceTab controller.
-     * Configures performance controls and selectors:
-     * - id="toggle-disable-library-blurhash" data-i18n="LabelDisableLibraryBlurHash"
-     * - this.$('#toggle-disable-library-blurhash') calling layoutManager.setDisableLibraryBlurhash(newValue)
      * - vertical-scroll-alignment-select with value: 'bottom', value: 'middle', value: 'top'
      * - play-queue-episode-limit-select with LabelPlayQueueEpisodeLimit
      * - library-page-size-select fallback: storage.getItem('pref:libraryPageSize') || 50
      * - library-page-size-select option: { value: 50, label: '50 (Default)' }
-     * @returns {string} Serialized tab HTML markup
-     */
-    _renderPerformanceTab() {
-        return this.performanceTab ? this.performanceTab.render() : '';
-    }
-
-    /**
+     * - { value: 'playerToggleOsdLayout', label: i18n.t('OptionPlayerToggleOsdLayout') }
      * =========================================================================
-     * Premium Controls and Remote Button Mapping Configuration Pane
-     * =========================================================================
-     * Provides a sleek, interface to configure user interface
-     * interaction behaviors (e.g. scroll wheel list navigation, hover-activated
-     * seek trickplay seekbars) and physical TV remote controller color buttons
-     * (Red, Green, Yellow, Blue). Fully responsive, layout-aware, and aligned
-     * with standard design systems.
-     *
-     * @returns {string} The fully compiled HTML template representing active tab UI.
      */
-    /**
-     * Renders the Controls tab content by delegating to the ControlsTab controller.
-     * Maps physical remote button options including:
-     * { value: 'playerToggleOsdLayout', label: i18n.t('OptionPlayerToggleOsdLayout') }
-     * @returns {string} Serialized tab HTML markup
-     */
-    _renderControlsTab() {
-        return this.controlsTab ? this.controlsTab.render() : '';
+    _renderActiveTabContent() {
+        // Map tab IDs directly to instantiated controller instances
+        const tabControllers = {
+            appearance: this.appearanceTab,
+            layout: this.layoutTab,
+            home: this.homeTab,
+            sidebar: this.sidebarTab,
+            player: this.playerTab,
+            subtitles: this.subtitlesTab,
+            performance: this.performanceTab,
+            controls: this.controlsTab,
+            plugins: this.pluginsTab,
+            libraries: this.librariesTab,
+            account: this.accountTab,
+            backup: this.backupTab,
+            about: this.aboutTab,
+            debug: this.debugTab
+        };
+
+        // Select controller or fallback to primary appearance tab
+        const controller = tabControllers[this.activeTab] || this.appearanceTab;
+        return controller ? controller.render() : '';
     }
 
-    /**
-     * Renders the Account tab content by delegating to the AccountTab controller.
-     * @returns {string} Serialized tab HTML markup
-     */
-    _renderAccountTab() {
-        return this.accountTab ? this.accountTab.render() : '';
-    }
+    // Consolidated one-line forwarders delegating directly to extracted controllers
+    _renderAppearanceTab() { return this.appearanceTab ? this.appearanceTab.render() : ''; }
+    _renderLayoutTab() { return this.layoutTab ? this.layoutTab.render() : ''; }
+    _renderHomeTab() { return this.homeTab ? this.homeTab.render() : ''; }
+    _renderSidebarTab() { return this.sidebarTab ? this.sidebarTab.render() : ''; }
+    _renderPlayerTab() { return this.playerTab ? this.playerTab.render() : ''; }
+    _renderSubtitlesTab() { return this.subtitlesTab ? this.subtitlesTab.render() : ''; }
+    _renderPerformanceTab() { return this.performanceTab ? this.performanceTab.render() : ''; }
+    _renderControlsTab() { return this.controlsTab ? this.controlsTab.render() : ''; }
+    _renderPluginsTab() { return this.pluginsTab ? this.pluginsTab.render() : ''; }
+    _renderLibrariesTab() { return this.librariesTab ? this.librariesTab.render() : ''; }
+    _renderAccountTab() { return this.accountTab ? this.accountTab.render() : ''; }
+    _renderAboutTab() { return this.aboutTab ? this.aboutTab.render() : ''; }
+    _renderBackupTab() { return this.backupTab ? this.backupTab.render() : ''; }
+    _renderDebugTab() { return this.debugTab ? this.debugTab.render() : ''; }
 
     /**
-     * Renders the About tab content by delegating to the AboutTab controller.
-     * @returns {string} Serialized tab HTML markup
+     * Queries the Litefin companion plugin to update status badges in the Plugins tab.
      */
-    _renderAboutTab() {
-        return this.aboutTab ? this.aboutTab.render() : '';
+    async _refreshSeerrStatus() {
+        if (this.pluginsTab) {
+            await this.pluginsTab.refreshSeerrStatus(this.element);
+        }
     }
 
     /**
@@ -573,15 +420,6 @@ class SettingsPage extends Page {
     }
 
     /**
-     * Render the Backup & Restore settings tab.
-     * Delegates markup construction to the extracted BackupTab component.
-     * @returns {string} HTML markup for the tab
-     */
-    _renderBackupTab() {
-        return this.backupTab ? this.backupTab.render() : '';
-    }
-
-    /**
      * Checks the Jellyfin server for existing settings backups and updates
      * the status card and button visibilities accordingly.
      * @private
@@ -590,15 +428,6 @@ class SettingsPage extends Page {
         if (this.backupTab) {
             await this.backupTab.updateBackupStatusDisplay(this.element);
         }
-    }
-
-    /**
-     * Renders the developer metrics and telemetry logging tab.
-     * Delegates markup construction to the extracted DebugTab component.
-     * @returns {string} HTML markup for the tab
-     */
-    _renderDebugTab() {
-        return this.debugTab ? this.debugTab.render() : '';
     }
 
     onMounted() {

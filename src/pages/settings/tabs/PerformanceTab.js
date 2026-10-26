@@ -63,8 +63,16 @@ export class PerformanceTab {
         const horizScrollMode =
             storage.getItem('pref:horizontalScrollMode') ||
             (platformInfo.isAndroid ? 'gpu' : 'native');
-        const scrollSmoothing = storage.getItem('pref:scrollSmoothingDuration') || 'current';
-        const scrollPhysics = storage.getItem('pref:scrollPhysics') || 'easing';
+        /*
+         * Vertical scroll smoothing duration resolution.
+         * Defaults to 'smooth' for fluid navigation speed and duration.
+         */
+        const scrollSmoothing = storage.getItem('pref:scrollSmoothingDuration') || 'smooth';
+        /*
+         * Scroll motion physics engine resolution.
+         * Defaults to velocity-based spring dynamics.
+         */
+        const scrollPhysics = storage.getItem('pref:scrollPhysics') || 'spring';
         const scrollAlignment = storage.getItem('pref:verticalScrollAlignment') || 'bottom';
         const libraryPageSize = storage.getItem('pref:libraryPageSize') || 50;
         const queueEpisodeLimit = PlayerSettings.get('playQueueEpisodeLimit') || 50;
@@ -127,8 +135,8 @@ export class PerformanceTab {
                         'scroll-smoothing-duration-select',
                         [
                             { value: 'instant', label: i18n.t('ScrollDurationInstant') || 'Instant (No Animation)' },
-                            { value: 'current', label: i18n.t('ScrollDurationCurrent') || 'Fast (Default)' },
-                            { value: 'smooth', label: i18n.t('ScrollDurationSmooth') || 'Smooth' },
+                            { value: 'current', label: i18n.t('ScrollDurationCurrent') || 'Fast' },
+                            { value: 'smooth', label: i18n.t('ScrollDurationSmooth') || 'Smooth (Default)' },
                             { value: 'slower', label: i18n.t('ScrollDurationSlower') || 'Slower (Ultra Smooth)' }
                         ],
                         scrollSmoothing
@@ -140,8 +148,8 @@ export class PerformanceTab {
                     <div class="setting-control">${this._renderDropdown(
                         'scroll-physics-select',
                         [
-                            { value: 'easing', label: i18n.t('ScrollPhysicsEasing') || 'Classic Easing (Default)' },
-                            { value: 'spring', label: i18n.t('ScrollPhysicsSpring') || 'Spring (Apple TV)' },
+                            { value: 'easing', label: i18n.t('ScrollPhysicsEasing') || 'Classic Easing' },
+                            { value: 'spring', label: i18n.t('ScrollPhysicsSpring') || 'Spring (Apple TV - Default)' },
                             { value: 'chase', label: i18n.t('ScrollPhysicsChase') || 'Chase (Continuous Follow)' },
                             { value: 'rail', label: i18n.t('ScrollPhysicsRail') || 'Rail (Constant Velocity)' },
                             { value: 'fling', label: i18n.t('ScrollPhysicsFling') || 'Fling (Momentum Sweep)' }

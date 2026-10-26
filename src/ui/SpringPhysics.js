@@ -357,8 +357,20 @@ export const SCROLL_PHYSICS_ENGINES = ['easing', 'spring', 'chase', 'rail', 'fli
  *
  * @param {string|null|undefined} value - Raw value from storage
  * @returns {'easing'|'spring'|'chase'|'rail'|'fling'} Resolved engine
- *   ('easing' for null, unknown, or the explicit classic-easing default)
+ *   ('spring' for null, unknown, or the default physics mode)
  */
 export function normalizeScrollPhysics(value) {
-    return SCROLL_PHYSICS_ENGINES.includes(value) && value !== 'easing' ? value : 'easing';
+    /*
+     * If an explicit supported engine preference exists in storage, honor it directly.
+     * This preserves user selections including classic easing and secondary followers.
+     */
+    if (value && SCROLL_PHYSICS_ENGINES.includes(value)) {
+        return value;
+    }
+
+    /*
+     * Fresh or unconfigured environments default to critically-damped spring physics
+     * to provide smooth and natural velocity-based scrolling transitions across UI rows.
+     */
+    return 'spring';
 }

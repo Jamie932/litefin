@@ -124,33 +124,49 @@ const ENGINE_TOLERANCE_PX = 0.06;
  * ============================================================================
  */
 
-test('normalizeScrollPhysics: every engine selectable, garbage and easing fall back to classic', () => {
+test('normalizeScrollPhysics: every engine selectable, garbage and null fall back to spring', () => {
     for (const engine of ['spring', 'chase', 'rail', 'fling']) {
         assert.strictEqual(normalizeScrollPhysics(engine), engine, `Engine "${engine}" must be selectable`);
     }
     assert.strictEqual(normalizeScrollPhysics('easing'), 'easing');
-    assert.strictEqual(normalizeScrollPhysics(null), 'easing');
-    assert.strictEqual(normalizeScrollPhysics(undefined), 'easing');
-    assert.strictEqual(normalizeScrollPhysics('nonsense'), 'easing');
+    assert.strictEqual(normalizeScrollPhysics(null), 'spring');
+    assert.strictEqual(normalizeScrollPhysics(undefined), 'spring');
+    assert.strictEqual(normalizeScrollPhysics('nonsense'), 'spring');
 });
 
 test('TouchHorizontalScroller: _getEngine reads the shared pref and falls back safely', () => {
     const scroller = new TouchHorizontalScroller();
     storage.removeItem('pref:scrollPhysics');
-    assert.strictEqual(scroller._getEngine(), 'easing');
+    assert.strictEqual(scroller._getEngine(), 'spring');
 
-    for (const engine of ['spring', 'chase', 'rail', 'fling']) {
+    for (const engine of ['easing', 'chase', 'rail', 'fling']) {
         storage.setItem('pref:scrollPhysics', engine);
         assert.strictEqual(scroller._getEngine(), engine);
     }
+    storage.setItem('pref:scrollPhysics', 'spring');
+    assert.strictEqual(scroller._getEngine(), 'spring');
 
     storage.setItem('pref:scrollPhysics', 'garbage');
-    assert.strictEqual(scroller._getEngine(), 'easing');
+    assert.strictEqual(scroller._getEngine(), 'spring');
     storage.removeItem('pref:scrollPhysics');
 });
 
-test('TouchHorizontalScroller: default settles via classic easeOutQuad (no physics state)', () => {
+test('TouchHorizontalScroller: default settles via spring physics (allocates physics state)', () => {
     storage.removeItem('pref:scrollPhysics');
+    const scroller = new TouchHorizontalScroller();
+    const { rowItems, row, calls } = makeFakeTouchRow(100);
+
+    scroller._animateSettle(rowItems, row, 100, 350, false);
+
+    const state = scroller._settleAnims.get(rowItems);
+    assert.ok(state, 'spring settle must register an animation state');
+    assert.strictEqual(state.physics, true, 'spring path must create a physics state');
+    assert.strictEqual(state.engine, 'spring');
+    assert.strictEqual(state.target, 350);
+});
+
+test('TouchHorizontalScroller: settles via classic easeOutQuad when easing is configured', () => {
+    storage.setItem('pref:scrollPhysics', 'easing');
     const scroller = new TouchHorizontalScroller();
     const { rowItems, row, calls } = makeFakeTouchRow(100);
 
@@ -166,6 +182,7 @@ test('TouchHorizontalScroller: default settles via classic easeOutQuad (no physi
     assert.ok(!scroller._settleAnims.has(rowItems), 'classic settle must clear its state on completion');
     assert.strictEqual(calls.endScroll[0], 350, 'classic settle must endTouchScroll exactly on target');
     assert.ok(calls.sync > 0, 'classic settle must keep VirtualCardRow synced');
+    storage.removeItem('pref:scrollPhysics');
 });
 
 /**

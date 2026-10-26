@@ -58,29 +58,29 @@ const { storage } = await import('../src/utils/StorageService.js');
  * ============================================================================
  */
 
-test('ScrollController: scroll physics defaults to "easing" (opt-in spring)', () => {
+test('ScrollController: scroll physics defaults to "spring"', () => {
     storage.removeItem('pref:scrollPhysics');
     const controller = new ScrollController();
     assert.strictEqual(
         controller.getScrollPhysics(),
-        'easing',
-        'Classic easing must remain the default so existing scroll behavior is untouched'
+        'spring',
+        'Spring physics must be the default for fluid velocity-based scrolling'
     );
 });
 
 test('ScrollController: scroll physics honors all engine preferences and rejects garbage', () => {
     const controller = new ScrollController();
-    for (const engine of ['spring', 'chase', 'rail', 'fling']) {
+    for (const engine of ['easing', 'chase', 'rail', 'fling']) {
         storage.setItem('pref:scrollPhysics', engine);
         assert.strictEqual(controller.getScrollPhysics(), engine, `Engine "${engine}" must be selectable`);
     }
-    storage.setItem('pref:scrollPhysics', 'easing');
-    assert.strictEqual(controller.getScrollPhysics(), 'easing');
+    storage.setItem('pref:scrollPhysics', 'spring');
+    assert.strictEqual(controller.getScrollPhysics(), 'spring');
     storage.setItem('pref:scrollPhysics', 'garbage');
     assert.strictEqual(
         controller.getScrollPhysics(),
-        'easing',
-        'Any unrecognized value must fall back to classic easing'
+        'spring',
+        'Any unrecognized value must fall back to default spring physics'
     );
     storage.removeItem('pref:scrollPhysics');
 });

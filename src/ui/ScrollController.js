@@ -49,14 +49,15 @@ import {
 /**
  * Resolves the base vertical scroll animation duration (in ms) based on user preference and platform:
  * - 'instant': 0ms (snaps immediately with no motion)
- * - 'current' (default): Snappy platform default (130ms on desktop/web, 180ms on TV)
- * - 'smooth': Balanced smoothness (200ms on desktop/web, 240ms on TV)
+ * - 'current': Snappy platform default (130ms on desktop/web, 180ms on TV)
+ * - 'smooth' (default): Balanced smoothness (200ms on desktop/web, 240ms on TV)
  * - 'slower': Relaxed, cinematic smooth (280ms on desktop/web, 340ms on TV)
  *
  * @returns {number} Duration in milliseconds
  */
 function getBaseVerticalDuration() {
-    const pref = storage.getItem('pref:scrollSmoothingDuration') || 'current';
+    // Defaults to 'smooth' for fluid vertical navigation motion
+    const pref = storage.getItem('pref:scrollSmoothingDuration') || 'smooth';
     if (pref === 'instant') return 0;
     const isDesktop = platformInfo.isDesktop || platformInfo.isWeb;
     if (pref === 'slower') return isDesktop ? 280 : 340;
@@ -584,7 +585,7 @@ class ScrollController {
 
         // Resolve active scroll mode and duration preference from stored user preferences.
         const scrollMode = isVertical ? this.getVerticalScrollMode() : this.getHorizontalScrollMode();
-        const durationPref = storage.getItem('pref:scrollSmoothingDuration') || 'current';
+        const durationPref = storage.getItem('pref:scrollSmoothingDuration') || 'smooth';
 
         /* ====================================================================
          * 🚀 INSTANT SCROLL NAVIGATION OVERRIDE
@@ -1937,7 +1938,7 @@ class ScrollController {
                         // 'instant': Immediate position snapping without transition delay
                         // -------------------------------------------------------------
                         const horizontalMode = this.getHorizontalScrollMode();
-                        const durationPref = storage.getItem('pref:scrollSmoothingDuration') || 'current';
+                        const durationPref = storage.getItem('pref:scrollSmoothingDuration') || 'smooth';
                         const isInstant =
                             options.instantScroll || horizontalMode === 'instant' || durationPref === 'instant';
 
@@ -2037,7 +2038,7 @@ class ScrollController {
                     const targetScroll = elementLeft - containerWidth / 2 + elementWidth / 2;
                     const finalScrollLeft = Math.max(0, targetScroll);
                     const horizontalMode = this.getHorizontalScrollMode();
-                    const durationPref = storage.getItem('pref:scrollSmoothingDuration') || 'current';
+                    const durationPref = storage.getItem('pref:scrollSmoothingDuration') || 'smooth';
                     const isInstant =
                         options.instantScroll || horizontalMode === 'instant' || durationPref === 'instant';
 

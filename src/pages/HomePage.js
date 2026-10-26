@@ -1453,7 +1453,69 @@ class HomePage extends Page {
             } else {
                 container.appendChild(sectionEl);
             }
+
+            // ── Make the skeleton an instant D-pad navigation target ─────────
+            // While this descriptor's data is loading, the placeholder cards are
+            // focusable so pressing Down at the row boundary moves focus into
+            // this section immediately instead of waiting for the network round
+            // trip to finish. _renderRow() replaces the interior and re-registers
+            // the same section name with the real VirtualCardRow config.
+            // Prefetched descriptors (data already in memory) skip skeleton cards
+            // entirely — their section stays empty and the skip loop jumps past;
+            // their real row renders almost immediately after.
+            if (!hasPrefetched) {
+                const cards = sectionEl.querySelectorAll('.media-card');
+                cards.forEach((card, i) => {
+                    card.setAttribute('tabindex', '0');
+                    // Keep the focus position across the skeleton → live swap
+                    card.dataset.skeletonIndex = String(i);
+                });
+            }
+            this._registerSkeletonSection(descriptor, sectionEl);
         }
+    }
+
+    /**
+     * Registers a FocusManager section for a loading row's skeleton placeholder.
+     *
+     * This gives the D-pad an instant target when the user navigates down past
+     * the last rendered row while data is still loading: focus hops into the
+     * skeleton's placeholder card right away, and when the real row content
+     * arrives, _renderRow() transfers focus onto the first real card at the
+     * remembered skeleton index.
+     *
+     * @param {RowDescriptor} descriptor - Row descriptor being loaded
+     * @param {HTMLElement} sectionEl - The skeleton section element
+     * @private
+     */
+    _registerSkeletonSection(descriptor, sectionEl) {
+        const itemsContainer = sectionEl.querySelector('.row-items');
+        if (!itemsContainer) return;
+
+        this.registerFocusSection(`home-row-${descriptor.id}`, itemsContainer, {
+            orientation: 'horizontal',
+            leaveUp: null, // Patched by _relinkAdjacentSections()
+            leaveDown: null, // Patched by _relinkAdjacentSections()
+            leaveLeft: 'sidebar',
+            onMove: (direction, currentElement) => {
+                const cards = Array.from(itemsContainer.querySelectorAll('.media-card'));
+                const idx = cards.indexOf(currentElement);
+                if (idx === -1) return false;
+                const next = idx + (direction === 'left' ? -1 : 1);
+                if (next < 0 || next >= cards.length) return false;
+                focusManager.focusElement(cards[next]);
+                return true;
+            },
+            onEnter: (fromElement, options) => {
+                if (fromElement && options && options.direction === 'up') {
+                    // Entering from below: land on the LAST skeleton card so the
+                    // cursor position matches its source position mirrored
+                    const cards = itemsContainer.querySelectorAll('.media-card');
+                    return cards.length ? cards[cards.length - 1] : null;
+                }
+                return null;
+            }
+        });
     }
 
     /**
@@ -1487,6 +1549,9 @@ class HomePage extends Page {
 
             // If the fetch returned no items, remove the skeleton placeholder
             if (!items || items.length === 0) {
+                // Drop the skeleton's FocusManager registration before removing
+                // its DOM container (skeleton sections are real nav targets now)
+                focusManager.unregister(`home-row-${descriptor.id}`);
                 const placeholder = this.$(`[data-row-id="${descriptor.id}"]`);
                 if (placeholder) {
                     placeholder.remove();
@@ -1528,6 +1593,7 @@ class HomePage extends Page {
             log.error(`Failed to load row "${descriptor.id}"`, error);
 
             // Remove the failed row's skeleton so we don't show an empty shimmer forever
+            focusManager.unregister(`home-row-${descriptor.id}`);
             const placeholder = this.$(`[data-row-id="${descriptor.id}"]`);
             if (placeholder) {
                 placeholder.remove();
@@ -1969,6 +2035,21 @@ class HomePage extends Page {
             onRestoreIndex: (index) => virtualRow.focusByIndex(index)
         });
 
+        // ── Transfer focus that landed on this row's skeleton ─────────────────
+        // If the D-pad hopped into the skeleton placeholder while data was still
+        // loading, its focus element was just destroyed by the innerHTML swap
+        // above. Restore focus onto the real card at the remembered skeleton
+        // position so the cursor neither freezes nor jumps to the row start.
+        const prevFocused = focusManager.getFocused();
+        const activeSection = focusManager.getActiveSection();
+        if (activeSection === `home-row-${descriptor.id}` && (!prevFocused || !document.contains(prevFocused))) {
+            const skeletonIndex = parseInt((prevFocused && prevFocused.dataset && prevFocused.dataset.skeletonIndex) || '0', 10);
+            const focusNode = virtualRow.focusByIndex(isNaN(skeletonIndex) ? 0 : skeletonIndex);
+            if (focusNode) {
+                focusManager.focusElement(focusNode, { instantScroll: true });
+            }
+        }
+
         // ── Track row state ───────────────────────────────────────────────────
         this._rowRegistry.set(descriptor.id, { descriptor, sectionEl, virtualRow });
         this._virtualRows.push(virtualRow); // Ordered list for offset cache pre-warming
@@ -2387,27 +2468,40 @@ class HomePage extends Page {
     _relinkAdjacentSections(container, sectionEl, rowId) {
         // Collect only fully-rendered sections (not skeletons) in DOM order
         const liveSections = Array.from(container.querySelectorAll('section[data-row-id]:not(.media-row--skeleton)'));
-        const idx = liveSections.indexOf(sectionEl);
-        if (idx === -1) return;
+
+        // Chain of ALL visible rows INCLUDING loading skeleton placeholders.
+        // Skeletons are real navigation targets now: the D-pad hops into them
+        // instantly while their data loads, so the Up/Down chain must link
+        // through them too.
+        const chainSections = Array.from(container.querySelectorAll('section[data-row-id]'));
 
         // Helper to get the section ID string for FocusManager
         const sId = (el) => (el ? `home-row-${el.getAttribute('data-row-id')}` : null);
 
-        const prevEl = idx > 0 ? liveSections[idx - 1] : null;
-        const nextEl = idx < liveSections.length - 1 ? liveSections[idx + 1] : null;
+        const idx = chainSections.indexOf(sectionEl);
+        if (idx === -1) return;
 
-        // Patch the new row's up/down neighbors
-        const newConfig = focusManager.getSectionConfig(`home-row-${rowId}`);
-        if (newConfig) {
-            newConfig.leaveUp = sId(prevEl);
+        // ── Sweep the whole visible chain ─────────────────────────────────────
+        // Rows appear progressively and in batches, so relinking only the
+        // immediate neighbours of one row leaves silent gaps further down
+        // (batch skeletons). A sweep keeps every registered section connected.
+        const hasDeferredRows = this._nextDeferredDescIndex < this._deferredDescriptors.length;
+        for (let i = 0; i < chainSections.length; i++) {
+            const chainId = chainSections[i].getAttribute('data-row-id');
+            const config = focusManager.getSectionConfig(`home-row-${chainId}`);
+            if (!config) continue;
 
-            // If there IS a next live row, point down to it as normal.
-            // If this is the last live row BUT deferred rows remain, install a D-pad
-            // hook that triggers the next lazy batch — matching DiscoverPage's pattern.
+            const prevEl = i > 0 ? chainSections[i - 1] : null;
+            const nextEl = i < chainSections.length - 1 ? chainSections[i + 1] : null;
+
+            config.leaveUp = prevEl ? sId(prevEl) : null;
+
             if (nextEl) {
-                newConfig.leaveDown = sId(nextEl);
-            } else if (this._nextDeferredDescIndex < this._deferredDescriptors.length) {
-                newConfig.leaveDown = () => {
+                config.leaveDown = sId(nextEl);
+            } else if (hasDeferredRows) {
+                // Last visible row but the deferred queue still has content —
+                // hook Down to pull (and auto-focus) the next lazy batch.
+                config.leaveDown = () => {
                     // Load the next batch and auto-focus its first row so the cursor
                     // lands naturally on new content instead of staying frozen.
                     this._loadNextDeferredBatch(true);
@@ -2415,20 +2509,8 @@ class HomePage extends Page {
                 };
             } else {
                 // All deferred rows exhausted — no more to load
-                newConfig.leaveDown = null;
+                config.leaveDown = null;
             }
-        }
-
-        // Patch the row above: its leaveDown should now point to this new row
-        if (prevEl) {
-            const prevConfig = focusManager.getSectionConfig(sId(prevEl));
-            if (prevConfig) prevConfig.leaveDown = `home-row-${rowId}`;
-        }
-
-        // Patch the row below: its leaveUp should now point to this new row
-        if (nextEl) {
-            const nextConfig = focusManager.getSectionConfig(sId(nextEl));
-            if (nextConfig) nextConfig.leaveUp = `home-row-${rowId}`;
         }
 
         // =====================================================================

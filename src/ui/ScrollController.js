@@ -268,12 +268,14 @@ class ScrollController {
             return stored;
         }
 
-        // On Android mobile touch devices, default to native touch overflow scroller.
-        // On Android TV, Smart TVs (Tizen, webOS), and Desktop, default to high-performance GPU mode.
-        if (platformInfo.isAndroid && !platformInfo.isAndroidTv) {
-            return 'native';
-        }
-        return 'gpu';
+        /*
+         * Default horizontal scrolling animation behavior:
+         * - On Android platforms, default to hardware-accelerated 'gpu' mode
+         *   for swift, responsive media row navigation.
+         * - On all other platforms (Smart TVs like Tizen/webOS, Desktop browsers, Tauri),
+         *   default to 'native' for smooth and continuous fluid container scrolling.
+         */
+        return platformInfo.isAndroid ? 'gpu' : 'native';
     }
 
     /**

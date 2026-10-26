@@ -55,9 +55,14 @@ export class PerformanceTab {
 
         const vertScrollMode =
             storage.getItem('pref:verticalScrollMode') || (platformInfo.isAndroid ? 'gpu' : 'native');
+        /*
+         * Horizontal scrolling mode resolution.
+         * Defaults to 'gpu' on Android targets for hardware acceleration.
+         * On all other environments (Tizen, webOS, Desktop, etc.), defaults to 'native' (Smooth).
+         */
         const horizScrollMode =
             storage.getItem('pref:horizontalScrollMode') ||
-            (platformInfo.isAndroid && !platformInfo.isAndroidTv ? 'native' : 'gpu');
+            (platformInfo.isAndroid ? 'gpu' : 'native');
         const scrollSmoothing = storage.getItem('pref:scrollSmoothingDuration') || 'current';
         const scrollPhysics = storage.getItem('pref:scrollPhysics') || 'easing';
         const scrollAlignment = storage.getItem('pref:verticalScrollAlignment') || 'bottom';
@@ -103,8 +108,13 @@ export class PerformanceTab {
                     <div class="setting-control">${this._renderDropdown(
                         'horizontal-scroll-mode-select',
                         [
-                            { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' },
+                            /*
+                             * Option 1: Smooth (Native container scrolling) - default for non-Android targets
+                             * Option 2: Fast (GPU Accelerated translate3d) - default for Android targets
+                             * Option 3: Instant (Immediate jump without animation)
+                             */
                             { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' },
+                            { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' },
                             { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }
                         ],
                         horizScrollMode

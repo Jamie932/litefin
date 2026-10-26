@@ -130,7 +130,14 @@ export const PHYSICS_SETTLE_DISTANCE_PX = 0.5;
  */
 export const GLIDE_ZONE_FRACTION = 0.25;
 export const GLIDE_ZONE_MAX_PX = 90;
+/** Average closing-speed floor for the glide (0.5px/ms = 8px per 60Hz frame). */
 export const GLIDE_FALLBACK_SPEED_PX_MS = 0.5;
+/** Glide entry speed cap — decelerate into the glide instead of inheriting
+ * a fast peak, so the handover never reads as a jerk. */
+export const GLIDE_ENTRY_SPEED_CAP_PX_MS = 2;
+/** Minimum glide duration (ms) — keeps the closing phase multi-frame even
+ * when the handover happens close to the target (throttled/skipped frames). */
+export const GLIDE_MIN_DURATION_MS = 110;
 
 /**
  * Absolute animation timeout (ms). Safety net for pathological retarget

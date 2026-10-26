@@ -42,7 +42,9 @@ import {
     PHYSICS_SETTLE_DISTANCE_PX,
     GLIDE_ZONE_FRACTION,
     GLIDE_ZONE_MAX_PX,
-    GLIDE_FALLBACK_SPEED_PX_MS
+    GLIDE_FALLBACK_SPEED_PX_MS,
+    GLIDE_ENTRY_SPEED_CAP_PX_MS,
+    GLIDE_MIN_DURATION_MS
 } from './SpringPhysics.js';
 
 // ============================================================================
@@ -1332,10 +1334,14 @@ class ScrollController {
             const remaining = Math.abs(s.target - s.x);
             if (remaining > 0 && remaining <= s.glideZone && !s.glide) {
                 const vEntry = Math.abs(s.v);
-                // Guarantee a perceptible average closing speed even when the
-                // handover happens after the spring has nearly stopped.
-                const vGlide = Math.max(vEntry, 2 * GLIDE_FALLBACK_SPEED_PX_MS);
-                s.glide = { x0: s.x, dur: (2 * remaining) / vGlide, start: s.elapsed };
+                // Soft entry: clamp the starting speed into [2·floor, cap] so
+                // the handover never reads as a jerk, then bound the glide
+                // duration between a multi-frame minimum and the longest that
+                // still keeps the average closing speed perceptible.
+                const vStart = Math.min(Math.max(vEntry, 2 * GLIDE_FALLBACK_SPEED_PX_MS), GLIDE_ENTRY_SPEED_CAP_PX_MS);
+                const durRaw = (2 * remaining) / vStart;
+                const dur = Math.min(Math.max(durRaw, GLIDE_MIN_DURATION_MS), remaining / GLIDE_FALLBACK_SPEED_PX_MS);
+                s.glide = { x0: s.x, dur, start: s.elapsed };
             }
 
             const settled = this._isPhysicsSettled(s);

@@ -82,7 +82,7 @@ test('PlaybackStopReporting: Watched completion threshold settings and server Ma
 
     // 3. Verify SettingsPage renders watched-threshold-select dropdown and maps it to watchedThreshold
     const settingsPageSource = readFileSync(
-        new URL('../src/pages/SettingsPage.js', import.meta.url),
+        new URL('../src/pages/settings/SettingsPage.js', import.meta.url),
         'utf8'
     );
     assert.ok(

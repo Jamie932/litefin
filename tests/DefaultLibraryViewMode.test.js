@@ -13,7 +13,7 @@ import test from 'node:test';
  */
 
 test('SettingsPage: contains Default Library View Mode and Items Per Row settings', () => {
-    const settingsPath = path.resolve('src/pages/SettingsPage.js');
+    const settingsPath = path.resolve('src/pages/settings/SettingsPage.js');
     const source = readFileSync(settingsPath, 'utf8');
 
     // Verify view mode dropdown element

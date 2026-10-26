@@ -85,7 +85,7 @@ test('WebOSAdapter: Source code integrity for screensaver suppression and user p
 
     // 8. Verify SettingsPage.js has the screensaver toggle, platform check, and handler
     const settingsPageSource = readFileSync(
-        new URL('../src/pages/SettingsPage.js', import.meta.url),
+        new URL('../src/pages/settings/SettingsPage.js', import.meta.url),
         'utf8'
     );
     assert.ok(

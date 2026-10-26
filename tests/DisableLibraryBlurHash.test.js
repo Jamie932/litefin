@@ -217,7 +217,7 @@ test('Disable Library BlurHash: CardRenderer behavior under different preference
 
 test('Disable Library BlurHash: SettingsPage markup contains toggle in performance section', () => {
     // Read SettingsPage source code
-    const settingsSource = readFileSync(new URL('../src/pages/SettingsPage.js', import.meta.url), 'utf8');
+    const settingsSource = readFileSync(new URL('../src/pages/settings/SettingsPage.js', import.meta.url), 'utf8');
 
     // Verify toggle button ID is declared in HTML template
     assert.strictEqual(

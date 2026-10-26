@@ -624,7 +624,7 @@ function createPageChunkLoader(importer) {
 // duplicated into two separate script files under the splitChunks-off
 // legacy configuration.
 const settingsChunk = createPageChunkLoader(
-    () => import(/* webpackChunkName: "settings" */ '../pages/SettingsPage.js')
+    () => import(/* webpackChunkName: "settings" */ '../pages/settings/SettingsPage.js')
 );
 const personChunk = createPageChunkLoader(() => import(/* webpackChunkName: "person" */ '../pages/PersonPage.js'));
 const seerrDetailsChunk = createPageChunkLoader(

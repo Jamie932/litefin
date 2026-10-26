@@ -15,7 +15,7 @@ import test from 'node:test';
 
 test('SettingsPage: remoteButtonOptions contains playerToggleOsdLayout option', () => {
     // Read SettingsPage source
-    const settingsPath = path.resolve('src/pages/SettingsPage.js');
+    const settingsPath = path.resolve('src/pages/settings/SettingsPage.js');
     const source = readFileSync(settingsPath, 'utf8');
 
     // Verify option value exists

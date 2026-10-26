@@ -439,6 +439,7 @@ const legacyConfig = {
         hints: 'warning'
     },
     entry: [
+        'whatwg-fetch',
         'url-search-params-polyfill',
         './src/utils/DomPolyfills.js',
         './src/utils/AssJsPolyfills.js',

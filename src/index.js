@@ -10,6 +10,8 @@
 import { app } from './core/App.js';
 import { logger } from './utils/Logger.js';
 import { PlayerSettings } from './utils/PlayerSettings.js';
+// Centralized platform identification
+import { platformInfo } from './utils/PlatformInfo.js';
 
 const log = logger.create('Bootstrap');
 
@@ -67,7 +69,13 @@ async function bootstrap() {
                 } catch (e) {
                     log.error('Exception launching Tizen service: ' + e.message);
                 }
-            } else if (window.webOS && window.webOS.service) {
+            } else if (
+                platformInfo.isWebOS &&
+                typeof window.PalmServiceBridge !== 'undefined' &&
+                window.webOS &&
+                window.webOS.service
+            ) {
+                // Wake up webOS background service via Luna bus strictly when running on LG webOS hardware
                 window.webOS.service.request('luna://org.litefin.app.service', {
                     method: 'discover',
                     parameters: { subscribe: false },

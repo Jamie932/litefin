@@ -18,6 +18,8 @@ import { api } from '../api/index.js';
 import { eventBus } from '../core/EventBus.js';
 import { logger } from './Logger.js';
 import { PlayerSettings } from './PlayerSettings.js';
+// Centralized platform capabilities & environment detection
+import { platformInfo } from './PlatformInfo.js';
 
 const log = logger.create('TimeManager');
 
@@ -90,11 +92,15 @@ class TimeManager {
         // --------------------------------------------------------------------
         // 1. Identify Host Operating Environment
         // --------------------------------------------------------------------
-        const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+        // Query native platform indicators. Samsung Tizen runtime provides window.tizen
+        // for direct hardware clock queries.
         const tizenObj = this._getTizenApi();
-        this._isTizen = Boolean(tizenObj);
-        this._isWebOS =
-            /Web[O0]S|NetCast|LG[ -]Browser/i.test(ua) || (typeof window !== 'undefined' && Boolean(window.webOS));
+        this._isTizen = Boolean(tizenObj) || platformInfo.isTizen;
+
+        // For LG webOS, rely on centralized platformInfo detection.
+        // We must never check window.webOS directly here because webostvjs imports
+        // define window.webOS globally across every supported platform.
+        this._isWebOS = platformInfo.isWebOS;
 
         log.info(`Platform clock drivers detected — Tizen: ${this._isTizen}, WebOS: ${this._isWebOS}`);
 
@@ -230,6 +236,15 @@ class TimeManager {
      */
     _initWebOSClockDriver() {
         try {
+            // Guard: Luna bus services strictly depend on the native PalmServiceBridge
+            // injected by the LG webOS WebAppMgr environment. If running in a standard
+            // browser or environment without this bridge, attempting webOS.service.request
+            // throws an unhandled 'PalmServiceBridge is not found' error into the console.
+            if (typeof window === 'undefined' || typeof window.PalmServiceBridge === 'undefined') {
+                log.debug('PalmServiceBridge not present in window; skipping webOS clock driver initialization');
+                return;
+            }
+
             const requestMethod = 'time/getSystemTime';
             const requestParams = { subscribe: true };
 
@@ -293,6 +308,11 @@ class TimeManager {
      */
     _tryWebOSFallbackService(handleResponse) {
         try {
+            // Validate that the native bridge exists before dispatching fallback Luna call
+            if (typeof window === 'undefined' || typeof window.PalmServiceBridge === 'undefined') {
+                return;
+            }
+
             if (window.webOS && window.webOS.service) {
                 window.webOS.service.request('luna://com.webos.service.systemservice', {
                     method: 'time/getSystemTime',

@@ -16,6 +16,8 @@ import { logger } from '../utils/Logger.js';
 import { storage } from '../utils/StorageService.js';
 import { i18n } from '../utils/i18n.js';
 import { customHeaders } from '../utils/CustomHeaders.js';
+// Centralized platform info utility
+import { platformInfo } from '../utils/PlatformInfo.js';
 
 const log = logger.create('ApiClient');
 
@@ -3561,7 +3563,13 @@ export async function sendWakeOnLan(macAddress) {
     }
 
     // 2. WebOS implementation: dispatch Luna request to the background service
-    if (typeof tizen === 'undefined' && typeof window.webOS !== 'undefined' && window.webOS.service) {
+    // Must strictly verify webOS platform identity and PalmServiceBridge presence
+    if (
+        platformInfo.isWebOS &&
+        typeof window.PalmServiceBridge !== 'undefined' &&
+        typeof window.webOS !== 'undefined' &&
+        window.webOS.service
+    ) {
         log.info('Platform WebOS: Dispatching WOL request to Luna service org.litefin.app.service');
 
         const sendLunaRequest = () =>
@@ -3674,7 +3682,13 @@ export function hasBackgroundDiscoveryService() {
     }
 
     // 2. WebOS Luna Service check
-    if (typeof tizen === 'undefined' && typeof window.webOS !== 'undefined' && window.webOS.service) {
+    // Validate that the app is actually running on webOS and has native service bridge access
+    if (
+        platformInfo.isWebOS &&
+        typeof window.PalmServiceBridge !== 'undefined' &&
+        typeof window.webOS !== 'undefined' &&
+        window.webOS.service
+    ) {
         return true;
     }
 
@@ -3781,7 +3795,13 @@ export async function discoverServers(onProgress = null, onServerFound = null, o
      * to the standard HTTP scan below.
      * =========================================================================
      */
-    if (typeof tizen === 'undefined' && typeof window.webOS !== 'undefined' && window.webOS.service) {
+    // Check for webOS platform identity and PalmServiceBridge before dispatching Luna discovery
+    if (
+        platformInfo.isWebOS &&
+        typeof window.PalmServiceBridge !== 'undefined' &&
+        typeof window.webOS !== 'undefined' &&
+        window.webOS.service
+    ) {
         log.info('WebOS detected — trying Luna discovery service first...');
 
         const lunaServers = await _discoverViaLunaService(onServerFound);

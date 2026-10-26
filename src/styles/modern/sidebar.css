@@ -569,11 +569,14 @@ html[data-sidebar-family="modern"] .sidebar.has-back-button #sidebar-logo-header
     margin-bottom: 12px;
 }
 
-/* Hide logo action tooltip in normal expanded modern and classic sidebars */
-.logo-tooltip,
-#sidebar-logo-header .logo-tooltip,
+/*
+ * Hide logo action tooltip in normal expanded modern and classic sidebars
+ * where the logo branding text is already rendered in the main drawer body.
+ */
 html[data-layout-sidebar="modern"] #sidebar-logo-header .logo-tooltip,
-html:not([data-layout-sidebar^="modern"]):not([data-layout-sidebar="floating-buttons"]):not([data-layout-sidebar="floating-island"]) #sidebar-logo-header .logo-tooltip {
+html[data-layout-sidebar="modern"] .logo-tooltip,
+html:not([data-layout-sidebar="modern-collapsed"]):not([data-layout-sidebar="floating-buttons"]):not([data-layout-sidebar="floating-island"]) #sidebar-logo-header .logo-tooltip,
+html:not([data-layout-sidebar="modern-collapsed"]):not([data-layout-sidebar="floating-buttons"]):not([data-layout-sidebar="floating-island"]) .logo-tooltip {
     display: none !important;
 }
 
@@ -651,10 +654,33 @@ html[data-layout-sidebar="floating-island"] #sidebar-logo-header:not(:focus):not
     visibility: hidden !important;
 }
 
-/* Reveal tooltip with fluid spring scaling on focus / hover */
+/*
+ * Reveal tooltip with fluid spring scaling on focus / hover.
+ * Anchoring to both #main-sidebar and generic selectors guarantees
+ * robust specificity over legacy base sheets and ensures reliable display
+ * when navigating via remote control, D-pad, keyboard, or mouse hover.
+ */
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item:focus .item-text,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item.focused .item-text,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item:hover .item-text,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar #sidebar-logo-header:focus .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar #sidebar-logo-header.focused .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar #sidebar-logo-header:hover .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar #sidebar-logo-header.sidebar-item:focus .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar #sidebar-logo-header.sidebar-item.focused .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar #sidebar-logo-header.sidebar-item:hover .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item:focus .sidebar-user-name,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item.focused .sidebar-user-name,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item:hover .sidebar-user-name,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item:focus .sidebar-syncplay-label,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item.focused .sidebar-syncplay-label,
+html[data-layout-sidebar="modern-collapsed"] #main-sidebar .sidebar-item:hover .sidebar-syncplay-label,
 html[data-layout-sidebar="modern-collapsed"] .sidebar-item:focus .item-text,
 html[data-layout-sidebar="modern-collapsed"] .sidebar-item.focused .item-text,
 html[data-layout-sidebar="modern-collapsed"] .sidebar-item:hover .item-text,
+html[data-layout-sidebar="modern-collapsed"] #sidebar-logo-header:focus .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #sidebar-logo-header.focused .logo-tooltip,
+html[data-layout-sidebar="modern-collapsed"] #sidebar-logo-header:hover .logo-tooltip,
 html[data-layout-sidebar="modern-collapsed"] #sidebar-logo-header.sidebar-item:focus .logo-tooltip,
 html[data-layout-sidebar="modern-collapsed"] #sidebar-logo-header.sidebar-item.focused .logo-tooltip,
 html[data-layout-sidebar="modern-collapsed"] #sidebar-logo-header.sidebar-item:hover .logo-tooltip,
@@ -664,9 +690,27 @@ html[data-layout-sidebar="modern-collapsed"] .sidebar-item:hover .sidebar-user-n
 html[data-layout-sidebar="modern-collapsed"] .sidebar-item:focus .sidebar-syncplay-label,
 html[data-layout-sidebar="modern-collapsed"] .sidebar-item.focused .sidebar-syncplay-label,
 html[data-layout-sidebar="modern-collapsed"] .sidebar-item:hover .sidebar-syncplay-label,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item:focus .item-text,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item.focused .item-text,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item:hover .item-text,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar #sidebar-logo-header:focus .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar #sidebar-logo-header.focused .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar #sidebar-logo-header:hover .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar #sidebar-logo-header.sidebar-item:focus .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar #sidebar-logo-header.sidebar-item.focused .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar #sidebar-logo-header.sidebar-item:hover .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item:focus .sidebar-user-name,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item.focused .sidebar-user-name,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item:hover .sidebar-user-name,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item:focus .sidebar-syncplay-label,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item.focused .sidebar-syncplay-label,
+html[data-layout-sidebar="floating-buttons"] #main-sidebar .sidebar-item:hover .sidebar-syncplay-label,
 html[data-layout-sidebar="floating-buttons"] .sidebar-item:focus .item-text,
 html[data-layout-sidebar="floating-buttons"] .sidebar-item.focused .item-text,
 html[data-layout-sidebar="floating-buttons"] .sidebar-item:hover .item-text,
+html[data-layout-sidebar="floating-buttons"] #sidebar-logo-header:focus .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #sidebar-logo-header.focused .logo-tooltip,
+html[data-layout-sidebar="floating-buttons"] #sidebar-logo-header:hover .logo-tooltip,
 html[data-layout-sidebar="floating-buttons"] #sidebar-logo-header.sidebar-item:focus .logo-tooltip,
 html[data-layout-sidebar="floating-buttons"] #sidebar-logo-header.sidebar-item.focused .logo-tooltip,
 html[data-layout-sidebar="floating-buttons"] #sidebar-logo-header.sidebar-item:hover .logo-tooltip,
@@ -676,9 +720,27 @@ html[data-layout-sidebar="floating-buttons"] .sidebar-item:hover .sidebar-user-n
 html[data-layout-sidebar="floating-buttons"] .sidebar-item:focus .sidebar-syncplay-label,
 html[data-layout-sidebar="floating-buttons"] .sidebar-item.focused .sidebar-syncplay-label,
 html[data-layout-sidebar="floating-buttons"] .sidebar-item:hover .sidebar-syncplay-label,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item:focus .item-text,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item.focused .item-text,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item:hover .item-text,
+html[data-layout-sidebar="floating-island"] #main-sidebar #sidebar-logo-header:focus .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #main-sidebar #sidebar-logo-header.focused .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #main-sidebar #sidebar-logo-header:hover .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #main-sidebar #sidebar-logo-header.sidebar-item:focus .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #main-sidebar #sidebar-logo-header.sidebar-item.focused .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #main-sidebar #sidebar-logo-header.sidebar-item:hover .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item:focus .sidebar-user-name,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item.focused .sidebar-user-name,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item:hover .sidebar-user-name,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item:focus .sidebar-syncplay-label,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item.focused .sidebar-syncplay-label,
+html[data-layout-sidebar="floating-island"] #main-sidebar .sidebar-item:hover .sidebar-syncplay-label,
 html[data-layout-sidebar="floating-island"] .sidebar-item:focus .item-text,
 html[data-layout-sidebar="floating-island"] .sidebar-item.focused .item-text,
 html[data-layout-sidebar="floating-island"] .sidebar-item:hover .item-text,
+html[data-layout-sidebar="floating-island"] #sidebar-logo-header:focus .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #sidebar-logo-header.focused .logo-tooltip,
+html[data-layout-sidebar="floating-island"] #sidebar-logo-header:hover .logo-tooltip,
 html[data-layout-sidebar="floating-island"] #sidebar-logo-header.sidebar-item:focus .logo-tooltip,
 html[data-layout-sidebar="floating-island"] #sidebar-logo-header.sidebar-item.focused .logo-tooltip,
 html[data-layout-sidebar="floating-island"] #sidebar-logo-header.sidebar-item:hover .logo-tooltip,

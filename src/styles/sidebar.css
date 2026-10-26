@@ -861,9 +861,14 @@ html[data-layout-tier="ultra-legacy"] .item-icon svg {
  * Chrome 32 paint pipeline fails to hide transformed inline-block elements
  * when only opacity: 0 and visibility: hidden are set. Force display: none
  * while unexpanded to guarantee zero visual leakage over page content.
+ *
+ * Keep focused and currently active keyboard/d-pad navigation items visible
+ * so that spatial navigation retains accessible tooltip and label cues
+ * even while the sidebar container itself is unexpanded and unhovered.
  */
-html[data-layout-tier="ultra-legacy"] .sidebar:not(.expanded):not(:hover) .sidebar-item:not(#sidebar-sub-libraries *) .item-text,
-html[data-layout-tier="ultra-legacy"] .sidebar:not(.expanded):not(:hover) .logo-text,
+html[data-layout-tier="ultra-legacy"] .sidebar:not(.expanded):not(:hover) .sidebar-item:not(#sidebar-sub-libraries *):not(:focus):not(.focused) .item-text,
+html[data-layout-tier="ultra-legacy"] .sidebar:not(.expanded):not(:hover) #sidebar-logo-header:not(:focus):not(.focused) .logo-text,
+html[data-layout-tier="ultra-legacy"] .sidebar:not(.expanded):not(:hover) .logo-text:not(:focus):not(.focused),
 html[data-layout-tier="ultra-legacy"] .sidebar:not(.expanded):not(:hover) #section-header,
 html[data-layout-tier="ultra-legacy"] .sidebar:not(.expanded):not(:hover) .sidebar-section-header {
     display: none !important;
@@ -943,11 +948,17 @@ html[data-layout-tier="ultra-legacy"] .sidebar:hover .item-text {
 /*
  * Force display: none on collapsed labels across older WebKit and legacy GPU layers
  * to eradicate ghosting, bleed-through, and clipping artifacts.
+ *
+ * Exclude items that currently hold focus (:focus or .focused) so that
+ * keyboard, remote control, and spatial navigation reliably render the label
+ * tooltips across compact and modern collapsed layouts without requiring mouse hover.
  */
-.sidebar:not(.expanded):not(:hover) .sidebar-item:not(#sidebar-sub-libraries *) .item-text,
-.sidebar:not(.expanded):not(:hover) > .item-text,
-.sidebar:not(.expanded):not(:hover) .sidebar-user-name,
-.sidebar:not(.expanded):not(:hover) .sidebar-syncplay-label {
+.sidebar:not(.expanded):not(:hover) .sidebar-item:not(#sidebar-sub-libraries *):not(:focus):not(.focused) .item-text,
+.sidebar:not(.expanded):not(:hover) > .item-text:not(:focus):not(.focused),
+.sidebar:not(.expanded):not(:hover) .sidebar-item:not(:focus):not(.focused) .sidebar-user-name,
+.sidebar:not(.expanded):not(:hover) .sidebar-item:not(:focus):not(.focused) .sidebar-syncplay-label,
+.sidebar:not(.expanded):not(:hover) .sidebar-user-name:not(:focus):not(.focused),
+.sidebar:not(.expanded):not(:hover) .sidebar-syncplay-label:not(:focus):not(.focused) {
     display: none !important;
     opacity: 0 !important;
     visibility: hidden !important;

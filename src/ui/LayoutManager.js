@@ -78,7 +78,13 @@ class LayoutManager {
         this._layout = LAYOUT.CLASSIC;
 
         // Granular layout settings
-        this._mediaRowsLayout = 'classic';
+        /*
+         * Active media rows presentation layout.
+         * Sets default horizontal card row arrangement to 'modern'.
+         * Provides sleek translucent styling and optimized card proportions by default.
+         * Can be overridden by persistent user preference or legacy migration flags.
+         */
+        this._mediaRowsLayout = 'modern';
         this._loginPageLayout = 'classic';
         /*
          * Active sidebar layout configuration (e.g., 'modern-collapsed').
@@ -225,11 +231,21 @@ class LayoutManager {
      * Initialize layout manager
      */
     init() {
-        // Load saved preferences
+        /*
+         * ---------------------------------------------------------------------
+         * Horizontal Media Rows Layout Configuration
+         * ---------------------------------------------------------------------
+         * Load user preference for media rows display styling from storage.
+         * If no explicit preference exists under 'pref:mediaRowsLayout', check
+         * backward-compatibility keys ('pref:modernMediaRows' or 'litefin:layout').
+         * When neither key specifies an explicit legacy classic preference ('false'/'classic'),
+         * default all fresh installs and unconfigured profiles to 'modern'.
+         */
         let savedMediaRowsLayout = storage.getItem('pref:mediaRowsLayout');
         if (!savedMediaRowsLayout) {
             const legacy = storage.getItem('pref:modernMediaRows') || storage.getItem('litefin:layout');
-            savedMediaRowsLayout = legacy === 'true' || legacy === 'modern' ? 'modern' : 'classic';
+            // Preserve explicit classic preference if legacy flag was false or classic; otherwise modern
+            savedMediaRowsLayout = legacy === 'false' || legacy === 'classic' ? 'classic' : 'modern';
         }
 
         let savedLoginPageLayout = storage.getItem('pref:loginPageLayout');

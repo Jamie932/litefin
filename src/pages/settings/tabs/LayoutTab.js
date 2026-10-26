@@ -165,18 +165,8 @@ export class LayoutTab {
                 <p class="content-subtitle" data-i18n="LayoutTabDescription">${i18n.t('LayoutTabDescription') || 'Configure page structures, login and details layouts, and UI component alignments.'}</p>
 
                 <div class="setting-item">
-                    <div class="setting-label"><span class="setting-name" data-i18n="LoginPageLayout">${i18n.t('LoginPageLayout') || 'Login Page Layout'}</span><span class="setting-description" data-i18n="LoginPageLayoutDescription">${i18n.t('LoginPageLayoutDescription') || 'Choose the layout mode for the login pages.'}</span></div>
-                    <div class="setting-control">${this._drop('login-page-layout-select', [{ value: 'classic', label: i18n.t('LayoutClassic') || 'Classic' }, { value: 'modern', label: i18n.t('LayoutModernLoginPage') || 'Modern layout' }], layoutManager.getLoginPageLayout() || 'classic')}</div>
-                </div>
-
-                <div class="setting-item">
-                    <div class="setting-label"><span class="setting-name" data-i18n="OsdLayout">${i18n.t('OsdLayout') || 'OSD Layout'}</span><span class="setting-description" data-i18n="OsdLayoutDescription">${i18n.t('OsdLayoutDescription') || 'Choose the layout alignment of player playback and menu control buttons.'}</span></div>
-                    <div class="setting-control">${this._drop('osd-layout-select', [{ value: 'left', label: i18n.t('OsdLayoutLeft') || 'Left Aligned (Default)' }, { value: 'centered', label: i18n.t('OsdLayoutCentered') || 'Centered' }, { value: 'hidden', label: i18n.t('OsdLayoutHidden') || 'Stealth / Anti-Spoiler (Hold Down to Reveal)' }], PlayerSettings.get('osdLayout') || 'left')}</div>
-                </div>
-
-                <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="MediaRowsLayout">${i18n.t('MediaRowsLayout') || 'Media Rows Layout'}</span><span class="setting-description" data-i18n="MediaRowsLayoutDescription">${i18n.t('MediaRowsLayoutDescription') || 'Choose the layout mode for horizontal media rows.'}</span></div>
-                    <div class="setting-control">${this._drop('media-rows-layout-select', [{ value: 'classic', label: i18n.t('LayoutClassic') || 'Classic' }, { value: 'modern', label: i18n.t('LayoutModern') || 'Modern' }, { value: 'expanded', label: i18n.t('LayoutExpandedPosters') || 'Modern Cards' }, { value: 'modern-posters', label: i18n.t('LayoutModernPosters') || 'Modern Posters' }, { value: 'expanding', label: i18n.t('LayoutExpandingPosters') || 'Expanding Posters' }], layoutManager.getMediaRowsLayout() || 'classic')}</div>
+                    <div class="setting-control">${this._drop('media-rows-layout-select', [{ value: 'classic', label: i18n.t('LayoutClassic') || 'Classic' }, { value: 'modern', label: i18n.t('LayoutModern') || 'Modern' }, { value: 'expanded', label: i18n.t('LayoutExpandedPosters') || 'Modern Cards' }, { value: 'modern-posters', label: i18n.t('LayoutModernPosters') || 'Modern Posters' }, { value: 'expanding', label: i18n.t('LayoutExpandingPosters') || 'Expanding Posters' }], layoutManager.getMediaRowsLayout() || 'modern')}</div>
                 </div>
 
                 <div class="setting-item ${mediaRowsLayout === 'expanding' || mediaRowsLayout === 'expanded' ? '' : 'hidden'}" id="item-prefer-backdrops-over-thumbs">
@@ -187,6 +177,16 @@ export class LayoutTab {
                 <div class="setting-item ${mediaRowsLayout === 'expanding' ? '' : 'hidden'}" id="item-home-force-expandable-posters">
                     <div class="setting-label"><span class="setting-name" data-i18n="HomeForceExpandablePosters">${i18n.t('HomeForceExpandablePosters') || 'Force Expandable Posters'}</span><span class="setting-description" data-i18n="HomeForceExpandablePostersDescription">${i18n.t('HomeForceExpandablePostersDescription') || 'Force all home screen rows to use portrait posters that expand horizontally.'}</span></div>
                     <div class="setting-control"><button class="toggle-switch ${storage.getItem('pref:homeForceExpandablePosters') === 'true' ? 'active' : ''}" id="toggle-home-force-expandable-posters" data-storage="pref:homeForceExpandablePosters" tabindex="0"></button></div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label"><span class="setting-name" data-i18n="LoginPageLayout">${i18n.t('LoginPageLayout') || 'Login Page Layout'}</span><span class="setting-description" data-i18n="LoginPageLayoutDescription">${i18n.t('LoginPageLayoutDescription') || 'Choose the layout mode for the login pages.'}</span></div>
+                    <div class="setting-control">${this._drop('login-page-layout-select', [{ value: 'classic', label: i18n.t('LayoutClassic') || 'Classic' }, { value: 'modern', label: i18n.t('LayoutModernLoginPage') || 'Modern layout' }], layoutManager.getLoginPageLayout() || 'classic')}</div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-label"><span class="setting-name" data-i18n="OsdLayout">${i18n.t('OsdLayout') || 'OSD Layout'}</span><span class="setting-description" data-i18n="OsdLayoutDescription">${i18n.t('OsdLayoutDescription') || 'Choose the layout alignment of player playback and menu control buttons.'}</span></div>
+                    <div class="setting-control">${this._drop('osd-layout-select', [{ value: 'left', label: i18n.t('OsdLayoutLeft') || 'Left Aligned (Default)' }, { value: 'centered', label: i18n.t('OsdLayoutCentered') || 'Centered' }, { value: 'hidden', label: i18n.t('OsdLayoutHidden') || 'Stealth / Anti-Spoiler (Hold Down to Reveal)' }], PlayerSettings.get('osdLayout') || 'left')}</div>
                 </div>
 
                 <div class="setting-item">

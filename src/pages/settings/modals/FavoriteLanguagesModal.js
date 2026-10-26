@@ -51,13 +51,28 @@ export class FavoriteLanguagesModal {
         const addLanguageEntry = (item) => {
             if (!item) return;
 
+            // Exclude dialects and regional variants (e.g., 'en-US', 'ar-EG', 'Arabic (Egypt)')
+            // Subtitles and audio tracks in media streams use singular canonical languages
+            const rawName = item.DisplayName || item.label || item.name || '';
+            const rawCode = item.Name || item.value || item.code || '';
+            if (rawCode.includes('-') || rawCode.includes('_') || rawName.includes('(')) {
+                return;
+            }
+
+            // Normalize item to retrieve canonical language codes and standard names
             const norm = languageManager.normalizeLanguage(item);
             if (!norm || !norm.code) return;
+
+            // Ensure normalized language is singular and not a regional subtag
+            if (norm.code.includes('-') || norm.code.includes('_') || (norm.name && norm.name.includes('('))) {
+                return;
+            }
 
             const canonicalCode = (norm.code || '').toLowerCase();
             const twoLetterCode = (norm.twoLetter || '').toLowerCase();
             const englishName = (norm.name || '').toLowerCase();
 
+            // Skip languages already indexed by ISO-639-2, ISO-639-1, or English name
             if (
                 seenKeys.has(canonicalCode) ||
                 (twoLetterCode && seenKeys.has(twoLetterCode)) ||
@@ -66,6 +81,7 @@ export class FavoriteLanguagesModal {
                 return;
             }
 
+            // Index all matching identifiers to prevent dialect collisions
             seenKeys.add(canonicalCode);
             if (twoLetterCode) seenKeys.add(twoLetterCode);
             if (englishName) seenKeys.add(englishName);

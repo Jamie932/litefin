@@ -32,3 +32,17 @@ html[data-horizontal-scroll="gpu"] .row-items-track {
     /* Promote sliding track element to its own dedicated hardware compositor plane */
     will-change: transform;
 }
+
+/* ============================================================================
+ * Apple-style Spring Physics (opt-in: pref:scrollPhysics === 'spring')
+ * ============================================================================
+ * When spring physics is enabled, ScrollController._springTrackHorizontal
+ * drives .row-items-track transforms per-frame through a RAF integrator.
+ * The CSS transition below would then lag every JS write by 150ms and
+ * visibly fight the integrator — so disable it while spring is active.
+ * ============================================================================ */
+html[data-scroll-physics="spring"] [data-platform="android"] .row-items-track,
+html[data-scroll-physics="spring"] .row-items-track {
+    -webkit-transition: none;
+    transition: none;
+}

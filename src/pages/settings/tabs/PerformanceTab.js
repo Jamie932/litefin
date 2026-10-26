@@ -86,37 +86,102 @@ export class PerformanceTab {
 
                 <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="VerticalScrollMode">${i18n.t('VerticalScrollMode') || 'Vertical Scroll Animation'}</span><span class="setting-description" data-i18n="VerticalScrollModeDescription">${i18n.t('VerticalScrollModeDescription') || 'Choose how vertical page scrolling is animated.'}</span></div>
-                    <div class="setting-control">${this._renderDropdown('vertical-scroll-mode-select', [{ value: 'current', label: i18n.t('ScrollModeCurrent') || 'Normal (Current)' }, { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' }, { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' }, { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }], vertScrollMode)}</div>
+                    <div class="setting-control">${this._renderDropdown(
+                        'vertical-scroll-mode-select',
+                        [
+                            { value: 'current', label: i18n.t('ScrollModeCurrent') || 'Normal (Current)' },
+                            { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' },
+                            { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' },
+                            { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }
+                        ],
+                        vertScrollMode
+                    )}</div>
                 </div>
 
                 <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="HorizontalScrollMode">${i18n.t('HorizontalScrollMode') || 'Horizontal Scroll Animation'}</span><span class="setting-description" data-i18n="HorizontalScrollModeDescription">${i18n.t('HorizontalScrollModeDescription') || 'Choose how horizontal media row scrolling is animated.'}</span></div>
-                    <div class="setting-control">${this._renderDropdown('horizontal-scroll-mode-select', [{ value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' }, { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' }, { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }], horizScrollMode)}</div>
+                    <div class="setting-control">${this._renderDropdown(
+                        'horizontal-scroll-mode-select',
+                        [
+                            { value: 'gpu', label: i18n.t('ScrollModeGpu') || 'Fast (GPU Accelerated)' },
+                            { value: 'native', label: i18n.t('ScrollModeNative') || 'Smooth (Native)' },
+                            { value: 'instant', label: i18n.t('ScrollModeInstant') || 'Instant (No Animation)' }
+                        ],
+                        horizScrollMode
+                    )}</div>
                 </div>
 
                 <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="ScrollSmoothingDuration">${i18n.t('ScrollSmoothingDuration') || 'Scroll Smoothing (Duration)'}</span><span class="setting-description" data-i18n="ScrollSmoothingDurationDescription">${i18n.t('ScrollSmoothingDurationDescription') || 'Configure animation duration and speed for vertical row navigation.'}</span></div>
-                    <div class="setting-control">${this._renderDropdown('scroll-smoothing-duration-select', [{ value: 'instant', label: i18n.t('ScrollDurationInstant') || 'Instant (No Animation)' }, { value: 'current', label: i18n.t('ScrollDurationCurrent') || 'Fast (Default)' }, { value: 'smooth', label: i18n.t('ScrollDurationSmooth') || 'Smooth' }, { value: 'slower', label: i18n.t('ScrollDurationSlower') || 'Slower (Ultra Smooth)' }], scrollSmoothing)}</div>
+                    <div class="setting-control">${this._renderDropdown(
+                        'scroll-smoothing-duration-select',
+                        [
+                            { value: 'instant', label: i18n.t('ScrollDurationInstant') || 'Instant (No Animation)' },
+                            { value: 'current', label: i18n.t('ScrollDurationCurrent') || 'Fast (Default)' },
+                            { value: 'smooth', label: i18n.t('ScrollDurationSmooth') || 'Smooth' },
+                            { value: 'slower', label: i18n.t('ScrollDurationSlower') || 'Slower (Ultra Smooth)' }
+                        ],
+                        scrollSmoothing
+                    )}</div>
                 </div>
 
                 <div class="setting-item">
-                    <div class="setting-label"><span class="setting-name" data-i18n="ScrollPhysics">${i18n.t('ScrollPhysics') || 'Scroll Physics Engine'}</span><span class="setting-description" data-i18n="ScrollPhysicsDescription">${i18n.t('ScrollPhysicsDescription') || 'Apple-style spring scrolling adds true velocity-based motion with momentum glide and a soft damped settle. Disable to keep the classic easing curves.'}</span></div>
-                    <div class="setting-control">${this._renderDropdown('scroll-physics-select', [{ value: 'easing', label: i18n.t('ScrollPhysicsEasing') || 'Classic Easing (Default)' }, { value: 'spring', label: i18n.t('ScrollPhysicsSpring') || 'Spring (Apple-style)' }], scrollPhysics)}</div>
+                    <div class="setting-label"><span class="setting-name" data-i18n="ScrollPhysics">${i18n.t('ScrollPhysics') || 'Scroll Physics Engine'}</span><span class="setting-description" data-i18n="ScrollPhysicsDescription">${i18n.t('ScrollPhysicsDescription') || 'Velocity-based scrolling with a momentum glide and a smooth, bounce-free Apple TV settle. Disable to keep the classic easing curves.'}</span></div>
+                    <div class="setting-control">${this._renderDropdown(
+                        'scroll-physics-select',
+                        [
+                            { value: 'easing', label: i18n.t('ScrollPhysicsEasing') || 'Classic Easing (Default)' },
+                            { value: 'spring', label: i18n.t('ScrollPhysicsSpring') || 'Spring (Apple TV)' }
+                        ],
+                        scrollPhysics
+                    )}</div>
                 </div>
 
                 <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="VerticalScrollAlignment">${i18n.t('VerticalScrollAlignment') || 'Scroll Focus Alignment'}</span><span class="setting-description" data-i18n="VerticalScrollAlignmentDescription">${i18n.t('VerticalScrollAlignmentDescription') || 'Choose where focused rows align on screen.'}</span></div>
-                    <div class="setting-control">${this._renderDropdown('vertical-scroll-alignment-select', [{ value: 'bottom', label: i18n.t('ScrollAlignmentBottom') || 'Bottom (Default - Minimal Scrolling)' }, { value: 'middle', label: i18n.t('ScrollAlignmentMiddle') || 'Middle (Centered)' }, { value: 'top', label: i18n.t('ScrollAlignmentTop') || 'Top (Classic Litefin)' }], scrollAlignment)}</div>
+                    <div class="setting-control">${this._renderDropdown(
+                        'vertical-scroll-alignment-select',
+                        [
+                            {
+                                value: 'bottom',
+                                label: i18n.t('ScrollAlignmentBottom') || 'Bottom (Default - Minimal Scrolling)'
+                            },
+                            { value: 'middle', label: i18n.t('ScrollAlignmentMiddle') || 'Middle (Centered)' },
+                            { value: 'top', label: i18n.t('ScrollAlignmentTop') || 'Top (Classic Litefin)' }
+                        ],
+                        scrollAlignment
+                    )}</div>
                 </div>
                 
                 <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="LabelLibraryPageSize">${i18n.t('LabelLibraryPageSize') || 'Items per page (Library)'}</span><span class="setting-description" data-i18n="LibraryPageSizeDescription">${i18n.t('LibraryPageSizeDescription') || 'Choose how many items to load at once in the grid view.'}</span></div>
-                    <div class="setting-control">${this._renderDropdown('library-page-size-select', [{ value: 25, label: '25' }, { value: 50, label: '50 (Default)' }, { value: 75, label: '75' }, { value: 100, label: '100' }, { value: 150, label: '150' }, { value: 'unlimited', label: i18n.t('OptionUnlimited') || 'Unlimited (Infinite Scroll)' }], libraryPageSize)}</div>
+                    <div class="setting-control">${this._renderDropdown(
+                        'library-page-size-select',
+                        [
+                            { value: 25, label: '25' },
+                            { value: 50, label: '50 (Default)' },
+                            { value: 75, label: '75' },
+                            { value: 100, label: '100' },
+                            { value: 150, label: '150' },
+                            { value: 'unlimited', label: i18n.t('OptionUnlimited') || 'Unlimited (Infinite Scroll)' }
+                        ],
+                        libraryPageSize
+                    )}</div>
                 </div>
 
                 <div class="setting-item">
                     <div class="setting-label"><span class="setting-name" data-i18n="LabelPlayQueueEpisodeLimit">${i18n.t('LabelPlayQueueEpisodeLimit') || 'Episode Queue Window Size'}</span><span class="setting-description" data-i18n="PlayQueueEpisodeLimitDescription">${i18n.t('PlayQueueEpisodeLimitDescription') || 'Number of episodes to load into queue around active item.'}</span></div>
-                    <div class="setting-control">${this._renderDropdown('play-queue-episode-limit-select', [{ value: 25, label: '25' }, { value: 50, label: '50 (Default)' }, { value: 75, label: '75' }, { value: 100, label: '100' }, { value: 150, label: '150' }], queueEpisodeLimit)}</div>
+                    <div class="setting-control">${this._renderDropdown(
+                        'play-queue-episode-limit-select',
+                        [
+                            { value: 25, label: '25' },
+                            { value: 50, label: '50 (Default)' },
+                            { value: 75, label: '75' },
+                            { value: 100, label: '100' },
+                            { value: 150, label: '150' }
+                        ],
+                        queueEpisodeLimit
+                    )}</div>
                 </div>
 
                 <div class="setting-item" id="alpha-picker-scroll-mode-item" style="${storage.getItem('pref:libraryPageSize') === 'unlimited' ? '' : 'display: none;'}">
@@ -195,9 +260,7 @@ export class PerformanceTab {
         this._unbindListeners();
 
         const root =
-            container ||
-            (this.page && typeof this.page.$ === 'function' ? this.page.element : null) ||
-            document;
+            container || (this.page && typeof this.page.$ === 'function' ? this.page.element : null) || document;
 
         // Toggle Reload Page on Resume
         const reloadResumeToggle = root.querySelector('#toggle-reload-on-resume');

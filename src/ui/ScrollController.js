@@ -7,6 +7,7 @@
  *
  * Supports:
  *   - Smooth scrolling with easeOutQuad easing (vertical + horizontal)
+ *   - Apple-style spring physics scrolling (opt-in via pref:scrollPhysics)
  *   - Animation retargeting (updating target mid-animation)
  *   - Row-based vertical alignment (media rows snap to top)
  *   - Horizontal card centering within row-items containers
@@ -23,6 +24,14 @@
 import { storage } from '../utils/StorageService.js';
 import { eventBus } from '../core/EventBus.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
+import {
+    createSpring,
+    springStep,
+    SPRING_SUBSTEP_MS,
+    SPRING_SETTLE_DISTANCE_PX,
+    SPRING_SETTLE_VELOCITY_PX_MS,
+    SPRING_MAX_DURATION_MS
+} from './SpringPhysics.js';
 
 // ============================================================================
 // Constants — all tunable values in one place for easy TV hardware tweaking
@@ -150,6 +159,23 @@ class ScrollController {
         eventBus.on('pref:horizontalScrollMode', (mode) => {
             this._applyHorizontalScrollMode(mode);
         });
+
+        // --------------------------------------------------------------------
+        // SCROLL PHYSICS INITIALIZATION
+        // --------------------------------------------------------------------
+        // Stamps the initial data-scroll-physics attribute on <html>. The
+        // 'spring' value flips .row-items-track CSS transitions off — JS-driven
+        // per-frame transform writes (the spring integrator) would otherwise
+        // fight the CSS transition on every frame.
+        // --------------------------------------------------------------------
+        this._applyScrollPhysics(this.getScrollPhysics());
+        eventBus.on('pref:scrollPhysics', (physics) => {
+            // Reset both axis engines so an in-flight easing animation never
+            // blends with (or fight) a newly activated spring integrator.
+            this.cancelAnimation('vertical');
+            this.cancelAnimation('horizontal');
+            this._applyScrollPhysics(physics === 'spring' ? 'spring' : 'easing');
+        });
     }
 
     /**
@@ -243,6 +269,32 @@ class ScrollController {
     _applyHorizontalScrollMode(mode) {
         if (typeof document?.documentElement?.setAttribute === 'function') {
             document.documentElement.setAttribute('data-horizontal-scroll', mode);
+        }
+    }
+
+    /**
+     * Resolves the active scroll physics engine from stored preferences.
+     * Supported options:
+     * - 'easing' (default): Classic time-based easeOutQuad curves.
+     * - 'spring': Apple-style velocity-driven damped spring motion with
+     *   momentum continuity across retargets and a soft damped settle.
+     *
+     * @returns {'easing'|'spring'} Active scroll physics engine
+     */
+    getScrollPhysics() {
+        return storage.getItem('pref:scrollPhysics') === 'spring' ? 'spring' : 'easing';
+    }
+
+    /**
+     * Stamped onto document.documentElement so stylesheets can disable CSS
+     * transition rules that would fight JS-driven spring transform writes.
+     *
+     * @param {'easing'|'spring'} physics
+     * @private
+     */
+    _applyScrollPhysics(physics) {
+        if (typeof document?.documentElement?.setAttribute === 'function') {
+            document.documentElement.setAttribute('data-scroll-physics', physics);
         }
     }
 
@@ -567,6 +619,30 @@ class ScrollController {
         }
 
         /* ====================================================================
+         * APPLE-STYLE SPRING PHYSICS ENGINE (OPT-IN)
+         * ====================================================================
+         * When pref:scrollPhysics === 'spring', the hop is delegated to the
+         * velocity-driven damped spring integrator below instead of the
+         * time-based easing loop. Everything above this point (instant snap,
+         * GPU track setup, dynamic duration scaling for long leaps) applies
+         * identically to both engines.
+         * ==================================================================== */
+        if (this.getScrollPhysics() === 'spring') {
+            this._springScrollTo({
+                stateKey,
+                animIdKey,
+                container,
+                track,
+                currentScroll,
+                targetScroll,
+                duration: durationToUse,
+                isVertical,
+                scrollMode
+            });
+            return;
+        }
+
+        /* ====================================================================
          * 🎬 UNIFIED SMOOTH SCROLL ANIMATION ENGINE (JS RAF + RETARGETING)
          * ====================================================================
          * Web browsers (Chromium on Samsung Tizen & LG webOS, WebKit, and Gecko)
@@ -756,6 +832,267 @@ class ScrollController {
 
         // Note: For the very first frame, we don't have a 'time' yet,
         // so we let the animate function initialize it.
+        this[animIdKey] = requestAnimationFrame(animate);
+    }
+
+    /**
+     * ========================================================================
+     * APPLE-STYLE SPRING SCROLL ENGINE (velocity-driven, opt-in)
+     * ========================================================================
+     * Integrates a damped harmonic oscillator (see SpringPhysics.js) inside
+     * a RAF loop. Engine guarantees:
+     *   1. VELOCITY CONTINUITY: retargeting only re-aims the spring — the
+     *      current velocity is untouched — so held D-pad key repeats produce
+     *      one continuous camera glide instead of restart-from-zero curves.
+     *   2. FIXED-STEP INTEGRATION: semi-implicit Euler with ≤8ms substeps,
+     *      so trajectories are identical on 30/60/120 Hz displays.
+     *   3. DETERMINISTIC SETTLE: snaps when both |Δx| < 0.3px and |v| <
+     *      0.015px/ms, with a hard SPRING_MAX_DURATION_MS timeout net.
+     *
+     * Shared state schema (also reused by the horizontal GPU track spring):
+     *   { container, track, axis, scrollMode, omega, zeta, x, v, target,
+     *     startTime, lastFrameTime, elapsed, physics, _write, _finalize }
+     *
+     * @param {Object} p
+     * @param {string} p.stateKey - Axis state slot ('_verticalScrollState' | '_horizontalScrollState')
+     * @param {string} p.animIdKey - Axis RAF id slot
+     * @param {HTMLElement} p.container - Scrollable container
+     * @param {HTMLElement|null} p.track - Vertical GPU compositor track (or null)
+     * @param {number} p.currentScroll - Current scroll position, px
+     * @param {number} p.targetScroll - Target scroll position, px
+     * @param {number} p.duration - Settle budget from duration preference, ms
+     * @param {boolean} p.isVertical - True for vertical axis
+     * @param {'gpu'|'native'|'current'|'instant'} p.scrollMode - Active axis scroll mode
+     * @private
+     */
+    _springScrollTo({
+        stateKey,
+        animIdKey,
+        container,
+        track,
+        currentScroll,
+        targetScroll,
+        duration,
+        isVertical,
+        scrollMode
+    }) {
+        const existing = this[stateKey];
+
+        if (existing && existing.physics) {
+            if (Math.abs(existing.target - targetScroll) < SCROLL_SNAP_THRESHOLD) {
+                // Unchanged destination — let the in-flight spring finish.
+                return;
+            }
+            // VELOCITY CONTINUITY: re-aim without touching current (x, v).
+            // Fresh settle budget so long re-aims aren't cut by the timeout.
+            existing.target = targetScroll;
+            existing.startTime = null;
+            return;
+        }
+        // Switching engines mid-flight: cleanly stop the old easing loop
+        // before the spring takes over the axis state slot.
+        if (existing && this[animIdKey]) {
+            cancelAnimationFrame(this[animIdKey]);
+            this[animIdKey] = null;
+        }
+
+        const distance = targetScroll - currentScroll;
+        const { omega, zeta, v0 } = createSpring(distance, duration);
+
+        // ----------------------------------------------------------------
+        // Axis write strategy — mirrors the easing engine exactly:
+        //   vertical gpu    → translate3d on .vertical-scroll-track
+        //   vertical native → container.scrollTop
+        //   horizontal      → container.scrollLeft
+        // ----------------------------------------------------------------
+        let write;
+        let finalize;
+
+        if (isVertical) {
+            write = (value) => {
+                if (scrollMode === 'gpu') {
+                    const currentTrack = this[stateKey] && this[stateKey].track;
+                    if (currentTrack) {
+                        currentTrack.style.transform = `translate3d(0px, -${value}px, 0px)`;
+                        currentTrack.style.webkitTransform = `translate3d(0px, -${value}px, 0px)`;
+                    }
+                    // PERFORMANCE: only write scrollTop when it has drifted
+                    // (identical rule to the easing engine's GPU branch).
+                    if (container.scrollTop !== 0) {
+                        container.scrollTop = 0;
+                    }
+                } else {
+                    // CRITICAL PERFORMANCE RULE: no layout reads while writing
+                    // (see the easing engine's scrollTop branch).
+                    container.scrollTop = value;
+                }
+            };
+            finalize = (value) => {
+                if (scrollMode === 'gpu') {
+                    const currentTrack = track;
+                    if (currentTrack) {
+                        currentTrack.style.transform = `translate3d(0px, -${value}px, 0px)`;
+                        currentTrack.style.webkitTransform = `translate3d(0px, -${value}px, 0px)`;
+                    }
+                    if (container.scrollTop !== 0) {
+                        container.scrollTop = 0;
+                    }
+                } else {
+                    container.scrollTop = value;
+                }
+                // STABILIZATION: settle any horizontal drift once on completion.
+                if (container.scrollLeft !== 0) {
+                    container.scrollLeft = 0;
+                }
+            };
+        } else {
+            write = (value) => {
+                container.scrollLeft = value;
+            };
+            finalize = (value) => {
+                container.scrollLeft = value;
+            };
+        }
+
+        this[stateKey] = {
+            container,
+            track,
+            axis: isVertical ? 'vertical' : 'horizontal',
+            scrollMode,
+            omega,
+            zeta,
+            x: currentScroll,
+            v: v0,
+            target: targetScroll,
+            startTime: null,
+            lastFrameTime: null,
+            elapsed: 0,
+            physics: true,
+            _write: write,
+            _finalize: finalize
+        };
+
+        this._runSpringLoop(stateKey, animIdKey);
+    }
+
+    /**
+     * Apple-style spring for the horizontal GPU compositor track
+     * (.row-items-track). Used by scrollIntoView when horizontal scroll mode
+     * is 'gpu' and spring physics is enabled — CSS cubic-bezier transitions
+     * cannot reproduce an underdamped spring, so the JS integrator drives the
+     * transform per frame instead (data-scroll-physics="spring" disables the
+     * CSS transition for exactly this reason).
+     *
+     * Reuses the horizontal axis state slot so cancelAnimation, isAnimating
+     * and scroll:finished behave identically to every other engine.
+     *
+     * @param {HTMLElement} track - .row-items-track element to slide
+     * @param {number} targetX - Target horizontal offset, px
+     * @param {number} currentX - Current horizontal offset, px
+     * @param {boolean} isRtl - RTL layout flag
+     * @private
+     */
+    _springTrackHorizontal(track, targetX, currentX, isRtl) {
+        const stateKey = '_horizontalScrollState';
+        const animIdKey = '_horizontalScrollAnimationId';
+        const existing = this[stateKey];
+
+        if (existing && existing.physics) {
+            if (Math.abs(existing.target - targetX) < SCROLL_SNAP_THRESHOLD) {
+                return;
+            }
+            existing.target = targetX;
+            existing.startTime = null;
+            return;
+        }
+        if (existing && this[animIdKey]) {
+            cancelAnimationFrame(this[animIdKey]);
+            this[animIdKey] = null;
+        }
+
+        const { omega, zeta, v0 } = createSpring(targetX - currentX, SCROLL_DURATION_HORIZONTAL);
+
+        const transformFor = (value) => (isRtl ? `translate3d(${value}px, 0, 0)` : `translate3d(-${value}px, 0, 0)`);
+
+        this[stateKey] = {
+            container: track,
+            track,
+            axis: 'horizontal',
+            scrollMode: 'gpu',
+            omega,
+            zeta,
+            x: currentX,
+            v: v0,
+            target: targetX,
+            startTime: null,
+            lastFrameTime: null,
+            elapsed: 0,
+            physics: true,
+            _write: (value) => {
+                const transformStr = transformFor(value);
+                track.style.webkitTransform = transformStr;
+                track.style.transform = transformStr;
+            },
+            _finalize: (value) => {
+                const transformStr = transformFor(value);
+                track.style.webkitTransform = transformStr;
+                track.style.transform = transformStr;
+            }
+        };
+
+        this._runSpringLoop(stateKey, animIdKey);
+    }
+
+    /**
+     * Shared RAF driver for both spring axes. Integrates with fixed ≤8ms
+     * substeps and delegates per-frame writes to the state's _write closure.
+     *
+     * @param {string} stateKey - Axis state slot
+     * @param {string} animIdKey - Axis RAF id slot
+     * @private
+     */
+    _runSpringLoop(stateKey, animIdKey) {
+        const animate = (time) => {
+            const s = this[stateKey];
+            if (!s || !s.physics) return;
+
+            // Anchor the clock on the very first RAF frame (dt = 0), or
+            // re-anchor after a retarget refreshed the settle budget.
+            if (s.lastFrameTime === null) {
+                s.lastFrameTime = time;
+            }
+            if (s.startTime === null) {
+                s.startTime = time;
+            }
+
+            // Clamp frame deltas (tab stalls) but keep global elapsed real.
+            let dt = Math.min(time - s.lastFrameTime, 64);
+            s.lastFrameTime = time;
+
+            while (dt > 0) {
+                const h = Math.min(dt, SPRING_SUBSTEP_MS);
+                const [nx, nv] = springStep(s.x, s.v, s.target, s.omega, s.zeta, h);
+                s.x = nx;
+                s.v = nv;
+                dt -= h;
+            }
+            s.elapsed = time - s.startTime;
+            s._write(s.x);
+
+            const settled =
+                Math.abs(s.target - s.x) < SPRING_SETTLE_DISTANCE_PX && Math.abs(s.v) < SPRING_SETTLE_VELOCITY_PX_MS;
+
+            if (settled || s.elapsed >= SPRING_MAX_DURATION_MS) {
+                s._finalize(s.target);
+                this[animIdKey] = null;
+                this[stateKey] = null;
+                this._checkScrollFinished();
+                return;
+            }
+
+            this[animIdKey] = requestAnimationFrame(animate);
+        };
+
         this[animIdKey] = requestAnimationFrame(animate);
     }
 
@@ -1425,7 +1762,19 @@ class ScrollController {
                             const currentTransform = track.style.transform || track.style.webkitTransform || '';
                             const match = currentTransform.match(/translate3d\(\s*-?([\d.]+)(?:px|%)?/);
                             const currentTransformX = match ? parseFloat(match[1]) : 0;
-                            if (Math.abs(currentTransformX - finalScrollLeft) >= SCROLL_SNAP_THRESHOLD) {
+
+                            if (this.getScrollPhysics() === 'spring') {
+                                // =========================================================
+                                // APPLE-STYLE SPRING (GPU COMPOSITED TRACK)
+                                // =========================================================
+                                // CSS cubic-bezier transitions cannot express an
+                                // underdamped spring, so the JS integrator drives
+                                // per-frame transform writes. The CSS transition
+                                // on .row-items-track is disabled while spring
+                                // physics is active (data-scroll-physics="spring").
+                                // =========================================================
+                                this._springTrackHorizontal(track, finalScrollLeft, currentTransformX, isRtl);
+                            } else if (Math.abs(currentTransformX - finalScrollLeft) >= SCROLL_SNAP_THRESHOLD) {
                                 const transformStr = isRtl
                                     ? `translate3d(${finalScrollLeft}px, 0, 0)`
                                     : `translate3d(-${finalScrollLeft}px, 0, 0)`;

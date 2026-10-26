@@ -77,11 +77,17 @@ const PAGE_CACHE_TTL = 24 * 60 * 60 * 1000;
 const EAGER_ROW_COUNT = 3;
 
 /**
- * Number of deferred rows to fetch per lazy-load batch (scroll or D-pad trigger).
- * Set to 1 so deferred rows load one at a time ahead of the user, keeping each
- * render cycle under 16ms and eliminating all visible hitching.
+ * Number of deferred rows to fetch per lazy-load batch.
+ *
+ * DEFERRED_BATCH_SIZE (1) applies to explicit user requests (D-pad boundary
+ * trigger) so the focus lands on the very first new row without waiting for
+ * extra work. DEFERRED_BATCH_SIZE_BACKGROUND (2) applies to background
+ * prefetch while no scroll animation/render is in flight — fetching two rows
+ * ahead keeps the queue permanently ahead of the user's D-pad navigation,
+ * so a boundary keypress almost always finds its row already fetched.
  */
 const DEFERRED_BATCH_SIZE = 1;
+const DEFERRED_BATCH_SIZE_BACKGROUND = 2;
 
 /**
  * Card width definitions (matching home.css) — used by VirtualCardRow internally.
@@ -1617,12 +1623,10 @@ class HomePage extends Page {
      */
     _prefetchRow(descriptor) {
         if (descriptor._prefetchPromise) return descriptor._prefetchPromise;
-        descriptor._prefetchPromise = descriptor
-            .fetchFn()
-            .catch((err) => {
-                log.warn(`Prefetch failed for row "${descriptor.id}"`, err);
-                return null;
-            });
+        descriptor._prefetchPromise = descriptor.fetchFn().catch((err) => {
+            log.warn(`Prefetch failed for row "${descriptor.id}"`, err);
+            return null;
+        });
         return descriptor._prefetchPromise;
     }
 
@@ -1744,7 +1748,7 @@ class HomePage extends Page {
         // frame budget clean at 60fps.
         if (!autoFocus && window.__scrollController && window.__scrollController.isAnimating) {
             const peekStart = this._nextDeferredDescIndex;
-            const peekEnd = Math.min(peekStart + DEFERRED_BATCH_SIZE, this._deferredDescriptors.length);
+            const peekEnd = Math.min(peekStart + DEFERRED_BATCH_SIZE_BACKGROUND, this._deferredDescriptors.length);
             const peekBatch = this._deferredDescriptors.slice(peekStart, peekEnd);
             for (const d of peekBatch) {
                 this._prefetchRow(d);
@@ -1765,9 +1769,13 @@ class HomePage extends Page {
 
         this._isDeferredLoading = true;
 
-        // Slice out the next batch from the deferred descriptor queue
+        // Slice out the next batch from the deferred descriptor queue.
+        // Explicit user triggers (autoFocus) consume a small batch so the cursor
+        // lands on the first new row with minimal work; background prefetch
+        // consumes a larger lookahead batch to stay ahead of ongoing navigation.
+        const batchSize = autoFocus ? DEFERRED_BATCH_SIZE : DEFERRED_BATCH_SIZE_BACKGROUND;
         const startIdx = this._nextDeferredDescIndex;
-        const endIdx = Math.min(startIdx + DEFERRED_BATCH_SIZE, this._deferredDescriptors.length);
+        const endIdx = Math.min(startIdx + batchSize, this._deferredDescriptors.length);
         const batch = this._deferredDescriptors.slice(startIdx, endIdx);
         this._nextDeferredDescIndex = endIdx;
 
@@ -2043,7 +2051,10 @@ class HomePage extends Page {
         const prevFocused = focusManager.getFocused();
         const activeSection = focusManager.getActiveSection();
         if (activeSection === `home-row-${descriptor.id}` && (!prevFocused || !document.contains(prevFocused))) {
-            const skeletonIndex = parseInt((prevFocused && prevFocused.dataset && prevFocused.dataset.skeletonIndex) || '0', 10);
+            const skeletonIndex = parseInt(
+                (prevFocused && prevFocused.dataset && prevFocused.dataset.skeletonIndex) || '0',
+                10
+            );
             const focusNode = virtualRow.focusByIndex(isNaN(skeletonIndex) ? 0 : skeletonIndex);
             if (focusNode) {
                 focusManager.focusElement(focusNode, { instantScroll: true });

@@ -1110,8 +1110,15 @@ class MainActivity : TauriActivity() {
     }
 
     /**
-     * Queries hardware decoder support via Android MediaCodecList.
-     * Accurately determines if device hardware supports AVC, HEVC, VP9, and AV1.
+     * =========================================================================
+     * Hardware Video Decoder Capability Probe
+     * =========================================================================
+     * Queries registered decoders via Android MediaCodecList to determine genuine
+     * hardware decoding support for AVC, HEVC, VP9, VP8, AV1, MPEG-2, and VC-1.
+     *
+     * Prevents playback black-screens on mobile chipsets that lack MPEG-2 or VC-1
+     * decoders (e.g. where c2.android.mpeg2.decoder is restricted to the TV domain).
+     * =========================================================================
      */
     @JavascriptInterface
     fun getSupportedVideoCodecs(): String {
@@ -1119,8 +1126,10 @@ class MainActivity : TauriActivity() {
         // Query list of regular decoders registered with the Android media framework
         val codecList = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
         val supportedMimes = mutableSetOf<String>()
+
         // Iterate available codecs and extract supported video mime types
         for (info in codecList.codecInfos) {
+          // Exclude encoders to ensure only decoder profiles are evaluated
           if (!info.isEncoder) {
             for (type in info.supportedTypes) {
               if (type.startsWith("video/", ignoreCase = true)) {
@@ -1129,6 +1138,7 @@ class MainActivity : TauriActivity() {
             }
           }
         }
+
         // Package findings into JSON payload for profile evaluation
         val result = org.json.JSONObject()
         result.put("h264", supportedMimes.contains("video/avc"))
@@ -1136,11 +1146,22 @@ class MainActivity : TauriActivity() {
         result.put("vp9", supportedMimes.contains("video/x-vnd.on2.vp9"))
         result.put("vp8", supportedMimes.contains("video/x-vnd.on2.vp8"))
         result.put("av1", supportedMimes.contains("video/av01"))
-        result.put("mpeg2video", supportedMimes.contains("video/mpeg2"))
+        result.put("mpeg2video", supportedMimes.contains("video/mpeg2") || supportedMimes.contains("video/mp2v"))
+
+        // Probe standard Android VC-1 mime type (video/wvc1) as well as vendor aliases
+        val hasVc1 = supportedMimes.contains("video/wvc1") ||
+                     supportedMimes.contains("video/x-ms-wmv") ||
+                     supportedMimes.contains("video/vc1")
+        result.put("vc1", hasVc1)
+
         result.toString()
       } catch (e: Exception) {
-        // Safe fallback for older Android TV devices
-        """{"h264":true,"hevc":true,"vp9":true,"vp8":true,"av1":false,"mpeg2video":true}"""
+        // Evaluate television hardware classification to configure safe fallback defaults
+        // Android TV boxes standardly support MPEG-2 decode, whereas phones frequently lack it
+        val isTv = try { this@MainActivity.isTvDevice() } catch (_: Exception) { false }
+        val mpeg2Default = isTv
+
+        """{"h264":true,"hevc":true,"vp9":true,"vp8":true,"av1":false,"mpeg2video":$mpeg2Default,"vc1":false}"""
       }
     }
 

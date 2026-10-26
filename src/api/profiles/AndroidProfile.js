@@ -31,9 +31,13 @@ let _cachedCapabilities = null;
  * Android MediaCodecList interface exposed on window.LitefinAndroid.
  * Accurately handles chipsets (like Amlogic S905X on Android 9) that
  * lack hardware AV1 decoders to prevent black-screen playback errors.
+ *
+ * For mobile phones and tablets lacking MPEG-2 or VC-1 decoders, ensures
+ * unsupported formats trigger server transcoding rather than silent direct play.
  */
 function detectHardwareVideoCodecs() {
     try {
+        // Query native Android interface for hardware-verified decoding capabilities
         if (typeof window !== 'undefined' && window.LitefinAndroid?.getSupportedVideoCodecs) {
             const raw = window.LitefinAndroid.getSupportedVideoCodecs();
             if (raw) {
@@ -43,17 +47,33 @@ function detectHardwareVideoCodecs() {
             }
         }
     } catch (e) {
+        // Log parse or bridge communication errors without interrupting playback initialization
         log.warn('Failed to parse hardware codecs from LitefinAndroid bridge:', e);
     }
 
-    // Default safe baseline: TV boxes running Android 9 / S905X do NOT have AV1 hardware decoders
+    // -------------------------------------------------------------------------
+    // Fallback Capabilities Resolution
+    // -------------------------------------------------------------------------
+    // Differentiate Android TV boxes (which standardly support MPEG-2) from phones
+    // and mobile devices that do not expose dedicated MPEG-2 or VC-1 decoders.
+    // -------------------------------------------------------------------------
+    const isTv =
+        (typeof window !== 'undefined' && typeof window.LitefinAndroid?.isTv === 'function' && !!window.LitefinAndroid.isTv()) ||
+        (typeof window !== 'undefined' && typeof window.AndroidBridge?.isTv === 'function' && !!window.AndroidBridge.isTv()) ||
+        (typeof navigator !== 'undefined' &&
+            navigator.userAgent &&
+            /Android.*(TV|Television|GoogleTV|Large Screen|SmartTV|BRAVIA|AFT|Nexus Player|MIBOX|SHIELD)/i.test(navigator.userAgent)) ||
+        false;
+
+    // Return safe baseline ensuring modern codecs decode while legacy ones transcode
     return {
         h264: true,
         hevc: true,
         vp9: true,
         vp8: true,
         av1: false,
-        mpeg2video: true
+        mpeg2video: isTv,
+        vc1: false
     };
 }
 
@@ -163,7 +183,8 @@ export function getDeviceCapabilities() {
         av1: hwCodecs.av1 === true,
         vp9: hwCodecs.vp9 !== false,
         vp8: hwCodecs.vp8 !== false,
-        mpeg2video: hwCodecs.mpeg2video !== false,
+        mpeg2video: hwCodecs.mpeg2video === true,
+        vc1: hwCodecs.vc1 === true,
         mpegts: true,
         ac3: true,
         eac3: true,
@@ -239,6 +260,9 @@ export function buildJellyfinProfile(options = {}) {
     const enableHEVC = hwCodecs.hevc !== false;
     const enableVP9 = hwCodecs.vp9 !== false;
     const enableAV1 = hwCodecs.av1 === true;
+    const enableVP8 = hwCodecs.vp8 !== false;
+    const enableMpeg2 = hwCodecs.mpeg2video === true;
+    const enableVc1 = hwCodecs.vc1 === true;
 
     // Audio format passthrough settings
     const dtsSetting = PlayerSettings.get('enableDts');
@@ -258,11 +282,17 @@ export function buildJellyfinProfile(options = {}) {
     // -------------------------------------------------------------------------
     // Direct Play Video Codecs Suite
     // -------------------------------------------------------------------------
+    // Only advertise codecs verified on the local hardware decoder pipeline.
+    // Pushing unsupported codecs (like mpeg2video/vc1 on mobile) causes Jellyfin
+    // to stream raw unaltered streams, resulting in audio-only playback with black screens.
+    // -------------------------------------------------------------------------
     const videoCodecs = ['h264'];
     if (enableHEVC) videoCodecs.push('hevc', 'h265');
     if (enableVP9) videoCodecs.push('vp9');
     if (enableAV1) videoCodecs.push('av1');
-    videoCodecs.push('vp8', 'mpeg2video', 'vc1');
+    if (enableVP8) videoCodecs.push('vp8');
+    if (enableMpeg2) videoCodecs.push('mpeg2video');
+    if (enableVc1) videoCodecs.push('vc1');
 
     // -------------------------------------------------------------------------
     // Direct Play Audio Codecs Suite

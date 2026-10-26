@@ -1102,8 +1102,9 @@ class SettingsPage extends Page {
 
         // Lightweight fallback for headless test runners that strip ES module imports
         this.$$('.select-btn').forEach((btn) => {
+            const id = btn.dataset?.id;
+            if (!id) return;
             btn.addEventListener('click', async () => {
-                const id = btn.dataset.id;
                 let options = [];
                 try {
                     options = JSON.parse(btn.dataset.options);

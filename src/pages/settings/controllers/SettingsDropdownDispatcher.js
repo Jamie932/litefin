@@ -42,6 +42,7 @@ export class SettingsDropdownDispatcher {
 
     /**
      * Binds click listeners to all dropdown selector buttons in the settings view.
+     * Restricts query to elements with data-id to avoid intercepting action buttons.
      */
     bindDropdownEvents() {
         const selectButtons = this.page.$$('.select-btn');
@@ -49,8 +50,10 @@ export class SettingsDropdownDispatcher {
 
         // Iterate through all rendered dropdown elements
         selectButtons.forEach((btn) => {
+            const id = btn.dataset.id;
+            if (!id) return;
+
             btn.addEventListener('click', async () => {
-                const id = btn.dataset.id;
                 let options = [];
                 try {
                     options = JSON.parse(btn.dataset.options);
@@ -367,9 +370,8 @@ export class SettingsDropdownDispatcher {
         }
 
         if (id === 'subtitle-position-select' || id === 'subtitle-size-select') {
-            const targetContainer = document.getElementById(
-                id === 'subtitle-position-select' ? 'subtitle-custom-pos-container' : 'subtitle-custom-size-container'
-            );
+            const elId = id === 'subtitle-position-select' ? 'subtitle-custom-pos-container' : 'subtitle-custom-size-container';
+            const targetContainer = document.getElementById(elId);
             if (targetContainer) {
                 targetContainer.style.display = newValue === 'custom' ? '' : 'none';
                 focusManager.invalidateCache('settings-content');
@@ -379,14 +381,15 @@ export class SettingsDropdownDispatcher {
         if (id === 'subtitle-shadow-select') {
             const isBorder = newValue === 'border' || newValue === 'uniform_border';
             const isNoneOrBorder = newValue === 'none' || newValue === 'border';
-            const toggle = (elId, show) => {
+            [
+                ['subtitle-border-width-container', isBorder],
+                ['subtitle-border-opacity-container', isBorder],
+                ['subtitle-shadow-opacity-container', !isNoneOrBorder],
+                ['subtitle-shadow-blur-container', !isNoneOrBorder]
+            ].forEach(([elId, show]) => {
                 const el = document.getElementById(elId);
                 if (el) el.style.display = show ? '' : 'none';
-            };
-            toggle('subtitle-border-width-container', isBorder);
-            toggle('subtitle-border-opacity-container', isBorder);
-            toggle('subtitle-shadow-opacity-container', !isNoneOrBorder);
-            toggle('subtitle-shadow-blur-container', !isNoneOrBorder);
+            });
             focusManager.invalidateCache('settings-content');
         }
     }

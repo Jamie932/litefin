@@ -342,6 +342,7 @@ export class LayoutTab {
                 const isEnabled = currentVal === null ? defVal : currentVal === 'true';
                 const nextVal = !isEnabled;
                 storage.setItem(storageKey, String(nextVal));
+                storage.flush();
                 btn.classList.toggle('active', nextVal);
                 log.info(`Layout storage setting changed: ${storageKey} = ${nextVal}`);
             });
@@ -354,6 +355,7 @@ export class LayoutTab {
                 const settingKey = btn.dataset.setting;
                 const nextVal = !PlayerSettings.get(settingKey);
                 PlayerSettings.set(settingKey, nextVal);
+                storage.flush();
                 btn.classList.toggle('active', nextVal);
                 log.info(`Layout player setting changed: ${settingKey} = ${nextVal}`);
             });

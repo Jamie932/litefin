@@ -267,16 +267,7 @@ export class ControlsTab {
             });
         }
 
-        // Toggle Show Profiles on Resume
-        const profilesOnResumeToggle = root.querySelector('#toggle-profiles-on-resume');
-        if (profilesOnResumeToggle) {
-            this._addListener(profilesOnResumeToggle, 'click', () => {
-                const enabled = storage.getItem('pref:showProfilesOnResume') !== 'true';
-                storage.setItem('pref:showProfilesOnResume', String(enabled));
-                profilesOnResumeToggle.classList.toggle('active', enabled);
-                log.info(`Show profiles on resume set to: ${enabled}`);
-            });
-        }
+        // Toggle Show Profiles on Resume is wired centrally by SettingsPage controller
 
         // Toggle Hover / Wheel Scroll Navigation
         const hoverScrollNavToggle = root.querySelector('#toggle-hover-scroll-nav');

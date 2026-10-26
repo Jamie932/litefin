@@ -227,7 +227,7 @@ export class AppearanceTab {
                 ${this._item(i18n.t('BackdropDimmer') || 'Backdrop dim level', i18n.t('BackdropDimmerDescription') || 'How dark the backdrop screensaver should be', this._drop('backdrop-dimmer-select', [{ value: '0', label: i18n.t('Off') || 'Off' }, { value: '0.1', label: '10%' }, { value: '0.2', label: '20%' }, { value: '0.3', label: '30%' }, { value: '0.4', label: '40%' }, { value: '0.5', label: '50%' }, { value: '0.6', label: '60%' }, { value: '0.7', label: '70%' }, { value: '0.8', label: '80%' }, { value: '0.9', label: '90%' }], storage.getItem('pref:backdropDimmer') || '0.3'), { id: 'screensaver-dim-item', cls: ssType !== 'backdrop' ? 'hidden' : '' })}
                 ${this._item(i18n.t('BackdropHideText') || 'Hide title and catchphrase', i18n.t('BackdropHideTextDescription') || 'Do not show any text over the backdrop screensaver images', this._toggle('toggle-backdrop-hide-text', 'pref:backdropHideText', false), { id: 'screensaver-hide-text-item', cls: ssType !== 'backdrop' ? 'hidden' : '' })}
                 ${this._item(i18n.t('BackdropIncludeMusic') || 'Include music library', i18n.t('BackdropIncludeMusicDescription') || 'Show backdrops from music artists in the screensaver', this._toggle('toggle-backdrop-include-music', 'pref:backdropIncludeMusic', false), { id: 'screensaver-include-music-item', cls: ssType !== 'backdrop' ? 'hidden' : '' })}
-                ${isWebOS ? this._item(i18n.t('PreventScreensaverOnPlayback') || 'Prevent screensaver during playback', i18n.t('PreventScreensaverOnPlaybackDescription') || 'Keep display awake and suppress system screensaver while video is actively playing', this._toggle('toggle-suppress-screensaver-playback', 'pref:suppressScreensaverOnPlayback', false), { id: 'screensaver-playback-suppression-item' }) : ''}
+                ${isWebOS ? this._item(i18n.t('PreventScreensaverOnPlayback') || 'Prevent screensaver during playback', i18n.t('PreventScreensaverOnPlaybackDescription') || 'Keep display awake and suppress system screensaver while video is actively playing', `<button class="toggle-switch ${storage.getItem('pref:suppressScreensaverOnPlayback') === 'true' ? 'active' : ''}" id="toggle-suppress-screensaver-playback" tabindex="0"></button>`, { id: 'screensaver-playback-suppression-item' }) : ''}
 
                 <h3 class="setting-section-title" data-i18n="ColorTheme">${i18n.t('ColorTheme')}</h3>
                 ${this._item(i18n.t('ThemeMode') || 'Theme Mode', i18n.t('ThemeModeDescription') || 'Choose the base visual style of the application.', this._drop('theme-mode-select', [{ value: 'black', label: i18n.t('ThemeBlack') || 'Black (OLED)' }, { value: 'ambient', label: i18n.t('ThemeAmbient') || 'Ambient Glow' }, { value: 'ember', label: i18n.t('ThemeEmber') || 'Ember' }, { value: 'sunset', label: i18n.t('ThemeSunset') || 'Sunset' }, { value: 'nocturne', label: i18n.t('ThemeNocturne') || 'Nocturne' }, { value: 'abyss', label: i18n.t('ThemeAbyss') || 'Abyss' }, { value: 'cyberpunk', label: i18n.t('ThemeCyberpunk') || 'Cyberpunk' }, { value: 'tinted', label: i18n.t('ThemeTinted') || 'Tinted' }, { value: 'tinted-light', label: i18n.t('ThemeTintedLight') || 'Light Tinted' }, { value: 'classic-dark', label: i18n.t('ThemeDarkClassic') || 'Dark Classic' }, { value: 'frost', label: i18n.t('ThemeFrost') || 'Frost' }, { value: 'paper', label: i18n.t('ThemePaper') || 'Paper' }, { value: 'classic-light', label: i18n.t('ThemeLightClassic') || 'Light Classic' }], themeMode))}
@@ -306,6 +306,7 @@ export class AppearanceTab {
                 const isEnabled = currentVal === null ? defVal : currentVal === 'true';
                 const nextVal = !isEnabled;
                 storage.setItem(storageKey, String(nextVal));
+                storage.flush();
                 btn.classList.toggle('active', nextVal);
                 log.info(`Appearance storage setting changed: ${storageKey} = ${nextVal}`);
 
@@ -334,6 +335,7 @@ export class AppearanceTab {
                 const settingKey = btn.dataset.setting;
                 const nextVal = !PlayerSettings.get(settingKey);
                 PlayerSettings.set(settingKey, nextVal);
+                storage.flush();
                 btn.classList.toggle('active', nextVal);
                 log.info(`Appearance player setting changed: ${settingKey} = ${nextVal}`);
 

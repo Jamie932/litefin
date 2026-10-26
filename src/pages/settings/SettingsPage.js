@@ -570,42 +570,27 @@ class SettingsPage extends Page {
             });
         });
 
-        // Mount tab event listeners with the active root element
+        // Mount ONLY the active tab controller event listeners to prevent duplicate listener collisions
         const root = this.element || document;
-        if (this.accountTab) {
-            this.accountTab.mount(root);
-        }
-        if (this.controlsTab) {
-            this.controlsTab.mount(root);
-        }
-        // Mount Performance tab event listeners if PerformanceTab controller is instantiated
-        // Attaches listeners including this.$('#toggle-disable-library-blurhash') invoking layoutManager.setDisableLibraryBlurhash
-        if (this.performanceTab) {
-            this.performanceTab.mount(root);
-        }
-        if (this.debugTab) {
-            this.debugTab.mount(root);
-        }
-        if (this.backupTab) {
-            this.backupTab.mount(root);
-        }
-        if (this.homeTab) {
-            this.homeTab.mount(root);
-        }
-        if (this.sidebarTab) {
-            this.sidebarTab.mount(root);
-        }
-        if (this.subtitlesTab) {
-            this.subtitlesTab.mount(root);
-        }
-        if (this.playerTab) {
-            this.playerTab.mount(root);
-        }
-        if (this.layoutTab) {
-            this.layoutTab.mount(root);
-        }
-        if (this.appearanceTab) {
-            this.appearanceTab.mount(root);
+        const tabControllers = {
+            appearance: this.appearanceTab,
+            layout: this.layoutTab,
+            home: this.homeTab,
+            sidebar: this.sidebarTab,
+            player: this.playerTab,
+            subtitles: this.subtitlesTab,
+            performance: this.performanceTab,
+            controls: this.controlsTab,
+            plugins: this.pluginsTab,
+            libraries: this.librariesTab,
+            account: this.accountTab,
+            backup: this.backupTab,
+            about: this.aboutTab,
+            debug: this.debugTab
+        };
+        const activeController = tabControllers[this.activeTab] || this.appearanceTab;
+        if (activeController && typeof activeController.mount === 'function') {
+            activeController.mount(root);
         }
 
         // Device-wide resume behavior (Controls tab).
@@ -642,7 +627,7 @@ class SettingsPage extends Page {
         // ALWAYS SHOW DETAILED VIEW - Preserved for test assertions
         // =====================================================================
         const alwaysShowSeeMoreBtn = this.$('#toggle-details-always-show-see-more');
-        if (alwaysShowSeeMoreBtn) {
+        if (alwaysShowSeeMoreBtn && !this.layoutTab) {
             alwaysShowSeeMoreBtn.addEventListener('click', () => {
                 const isAlways = storage.getItem('pref:detailsAlwaysShowSeeMore') === 'true';
                 const newValue = !isAlways;
@@ -762,8 +747,8 @@ class SettingsPage extends Page {
         // Initialize Sliders
         this._bindSliderEvents();
 
-        // Mount Plugins tab event listeners if PluginsTab controller is instantiated
-        if (this.pluginsTab) {
+        // Plugins tab listeners are mounted via activeController above
+        if (this.pluginsTab && this.activeTab === 'plugins') {
             this.pluginsTab.mount(this.element);
         }
     }

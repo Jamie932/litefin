@@ -316,16 +316,7 @@ export class PerformanceTab {
             });
         }
 
-        // Toggle Disable BlurHash in Library
-        const disableLibBlurhashToggle = root.querySelector('#toggle-disable-library-blurhash');
-        if (disableLibBlurhashToggle) {
-            this._addListener(disableLibBlurhashToggle, 'click', () => {
-                const nextState = !layoutManager.getDisableLibraryBlurhash();
-                layoutManager.setDisableLibraryBlurhash(nextState);
-                disableLibBlurhashToggle.classList.toggle('active', nextState);
-                log.info(`Disable library blurhash set to: ${nextState}`);
-            });
-        }
+        // Toggle Disable BlurHash in Library is wired centrally by SettingsPage controller
 
         // Toggle Disable Focus Restoration
         const disableFocusRestoreToggle = root.querySelector('#toggle-disable-focus-restore');

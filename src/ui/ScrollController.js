@@ -1268,6 +1268,21 @@ class ScrollController {
             // Clamp frame deltas (tab stalls) but keep global elapsed real.
             let dt = Math.min(rawDelta, 64);
 
+            // Settle budget accumulates INTEGRATED simulation time, not wall
+            // clock (identical accounting to TouchHorizontalScroller). On slow
+            // CPU / low-fps devices each rAF frame advances at most 64ms of
+            // simulated time, so simulation falls behind wall time. Timing the
+            // SPRING_MAX_DURATION_MS hard timeout on wall clock fired the
+            // finalize() snap while the physics was still tens of pixels short
+            // of the target — the visible post-scroll "nudge" (20-30px jump) on
+            // slow Tizen hardware. Re-anchoring after a retarget restarts the
+            // budget, preserving the original "fresh settle budget" intent.
+            if (s.startTime === null) {
+                s.startTime = time;
+                s.elapsed = 0;
+            }
+            s.elapsed += dt;
+
             while (dt > 0) {
                 const h = Math.min(dt, s.engine === 'spring' ? SPRING_SUBSTEP_MS : 16);
                 const [nx, nv] = this._advancePhysics(s, h);
@@ -1275,7 +1290,6 @@ class ScrollController {
                 s.v = nv;
                 dt -= h;
             }
-            s.elapsed = time - s.startTime;
             s._write(s.x);
 
             const settled = this._isPhysicsSettled(s);

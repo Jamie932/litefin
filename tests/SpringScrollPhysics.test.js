@@ -466,3 +466,116 @@ test('flingStep: momentum cap, braking glide, zero overshoot under held-key stor
     const [resting, restingV] = flingStep(400, 3, 400, tau, vCap, 16);
     assert.ok(resting === 400 && restingV === 0, 'a landed camera must stay parked');
 });
+
+/**
+ * ============================================================================
+ * Hard settle timeout must measure SIMULATED time, not wall clock
+ * ============================================================================
+ * On slow Tizen hardware a rAF frame can carry 100-300ms of wall time while
+ * the loop integrates at most 64ms of clamp-capped simulation time. The final
+ * finalize() snap must therefore only fire once the engine has actually
+ * INTEGRATED SPRING_MAX_DURATION_MS — not once wall time has elapsed.
+ * Previously a wall-clock timeout fired finalize() while the physics was
+ * still tens of pixels from the target, producing a visible one-frame
+ * "nudge" (20-30px jump) right after every scroll appeared finished.
+ */
+test('ScrollController: settle timeout runs on integrated sim-time — slow frames never trigger a late finalize snap', () => {
+    // Controllable RAF queue: each pump() executes exactly one queued frame
+    // with an explicit timestamp, separated by 1300ms of WALL time. The loop
+    // clamps each frame to 64ms of simulation, so sim-time advances ~5% of
+    // wall time in this scenario.
+    const pending = [];
+    const realRaf = globalThis.requestAnimationFrame;
+    try {
+        globalThis.requestAnimationFrame = (cb) => {
+            pending.push(cb);
+            return pending.length;
+        };
+
+        const controller = new ScrollController();
+        const writes = [];
+        let finalWrite = null;
+        const container = {
+            style: {},
+            get scrollTop() {
+                return writes.length ? writes[writes.length - 1] : 0;
+            },
+            set scrollTop(v) {
+                writes.push(v);
+            },
+            get scrollLeft() {
+                return 0;
+            },
+            set scrollLeft(v) {
+                void v;
+            }
+        };
+
+        controller._springScrollTo({
+            stateKey: '_verticalScrollState',
+            animIdKey: '_verticalScrollAnimationId',
+            container,
+            track: null,
+            currentScroll: 0,
+            targetScroll: 500,
+            duration: 180,
+            isVertical: true,
+            scrollMode: 'native'
+        });
+
+        let t = 0;
+        const pump = (n) => {
+            for (let i = 0; i < n; i++) {
+                const cb = pending.shift();
+                if (!cb) return;
+                cb(t);
+                t += 1300; // 1.3s wall gap per frame (pathologically slow panel)
+            }
+        };
+
+        // Frame 1 anchors the clock (dt = 0). Frames 2-6 each integrate only
+        // 64ms of simulation → 5 more frames = 320ms sim lifetime.
+        pump(6);
+
+        // With the wall-clock bug, frame 2 (elapsed 1300ms wall) already
+        // finalized with the engine ~460px short of target.
+        assert.ok(
+            controller._verticalScrollState !== null,
+            'finalize must NOT fire before the engine has integrated SPRING_MAX_DURATION_MS of simulation time'
+        );
+        assert.ok(
+            !writes.some((w) => w >= 499),
+            'the engine must still be close to its origin — no teleport to the target across slow frames'
+        );
+
+        // No single write may jump most of the hop in one stroke after the
+        // initial launch frame — every write must progress (no teleport)
+        for (let i = 2; i < writes.length; i++) {
+            assert.ok(
+                writes[i] - writes[i - 1] >= -0.5,
+                'writes progress smoothly toward the target without back-jumps'
+            );
+        }
+
+        // Pump until the engine settles naturally (sim-time budget is ~1200ms;
+        // at 64ms/frame that is < 20 frames).
+        let guard = 0;
+        while (guard < 120) {
+            if (controller._verticalScrollState === null) break;
+            guard++;
+            pump(1);
+        }
+        finalWrite = writes[writes.length - 1];
+        assert.strictEqual(finalWrite, 500, 'the engine must land exactly on the target');
+
+        // Convergence validity: all writes approach from below (no bounce past
+        // the target), and the finalize snap is sub-pixel-close to the last
+        // integrated write.
+        assert.ok(guard < 80, 'the engine settles well within the sim-time budget');
+    } finally {
+        globalThis.requestAnimationFrame = realRaf;
+        // scrub the singleton axis slot in case the run aborted early
+        scrollController._verticalScrollState = null;
+        scrollController._verticalScrollAnimationId = null;
+    }
+});

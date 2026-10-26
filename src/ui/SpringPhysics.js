@@ -122,6 +122,12 @@ export const PHYSICS_SETTLE_DISTANCE_PX = 0.5;
 /**
  * Absolute animation timeout (ms). Safety net for pathological retarget
  * storms and tiny residual demands that technically equal the thresholds.
+ *
+ * Measured in INTEGRATED SIMULATION time (sum of clamped per-frame dt),
+ * not wall clock. Slow panels ( fps ≪ 60 ) integrate at most 64ms per rAF
+ * frame, so simulation lags real time; timing this on wall clock would
+ * fire the terminal finalize() snap while the engine was still tens of
+ * pixels from the target — the visible post-scroll "nudge" on slow TVs.
  */
 export const SPRING_MAX_DURATION_MS = 1200;
 

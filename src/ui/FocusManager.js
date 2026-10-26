@@ -304,9 +304,17 @@ class FocusManager {
      * @param {string} direction
      */
     _handleKey(direction) {
-        // Simple debounce to prevent event flooding
+        // Simple debounce to prevent event flooding. A keypress in the OPPOSITE
+        // direction of the previous one always passes through: auto-repeat only
+        // repeats the same direction, so a direction change is an intentional
+        // correction — most noticeable at page boundaries where the previous
+        // press was a dead key (e.g. Down at the last row, then immediately Up).
+        // Without this passthrough the correction key would be silently
+        // swallowed and navigation would feel frozen for KEY_DEBOUNCE_MS.
         const now = Date.now();
-        if (now - this._lastMoveTime < KEY_DEBOUNCE_MS) return;
+        const isDebouncedGap = now - this._lastMoveTime < KEY_DEBOUNCE_MS;
+        const isDirectionChange = this._lastMoveDirection != null && direction !== this._lastMoveDirection;
+        if (isDebouncedGap && !isDirectionChange) return;
 
         // Track previous move time BEFORE updating current
         // This allows us to detect rapid key holds

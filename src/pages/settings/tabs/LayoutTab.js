@@ -359,6 +359,15 @@ export class LayoutTab {
     }
 
     /**
+     * Updates visibility of details page title style option based on layouts.
+     */
+    updateDetailsTitleStyleVisibility() {
+        if (this.page && typeof this.page._updateDetailsTitleStyleVisibility === 'function') {
+            this.page._updateDetailsTitleStyleVisibility();
+        }
+    }
+
+    /**
      * Cleans up all attached event listeners to prevent memory leaks.
      */
     destroy() {

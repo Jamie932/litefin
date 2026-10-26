@@ -154,10 +154,8 @@ export class SettingsDropdownDispatcher {
             'osd-seekbar-progress-color-select': () => layoutManager.setOsdSeekBarProgressColor(newValue),
             'theme-mode-select': () => {
                 layoutManager.setThemeMode(newValue);
-                if (this.page.appearanceTab) {
-                    this.page.appearanceTab.updateLighterBackgroundVisibility();
-                    this.page.appearanceTab.updateSignatureAccentVisibility();
-                }
+                this.page._updateLighterBackgroundVisibility?.();
+                this.page._updateSignatureAccentVisibility?.();
             },
             'watched-threshold-select': () => {
                 PlayerSettings.set('watchedThreshold', newValue);
@@ -197,9 +195,7 @@ export class SettingsDropdownDispatcher {
         }
 
         if (settingConfig.key === 'pref:detailsLayout' || settingConfig.key === 'pref:seasonEpisodeDetailsLayout') {
-            if (this.page.layoutTab) {
-                this.page.layoutTab.updateDetailsTitleStyleVisibility();
-            }
+            this.page._updateDetailsTitleStyleVisibility?.();
         }
 
         if (settingConfig.triggerEvent) {

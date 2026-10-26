@@ -322,6 +322,24 @@ export class AppearanceTab {
     }
 
     /**
+     * Updates visibility of lighter background option based on active theme.
+     */
+    updateLighterBackgroundVisibility() {
+        if (this.page && typeof this.page._updateLighterBackgroundVisibility === 'function') {
+            this.page._updateLighterBackgroundVisibility();
+        }
+    }
+
+    /**
+     * Updates visibility of signature accent option based on active theme.
+     */
+    updateSignatureAccentVisibility() {
+        if (this.page && typeof this.page._updateSignatureAccentVisibility === 'function') {
+            this.page._updateSignatureAccentVisibility();
+        }
+    }
+
+    /**
      * Cleans up all attached event listeners to prevent memory leaks.
      */
     destroy() {

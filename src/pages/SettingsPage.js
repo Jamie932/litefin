@@ -20,7 +20,6 @@ import { storage } from '../utils/StorageService.js';
 import { logger } from '../utils/Logger.js';
 import { i18n } from '../utils/i18n.js';
 import { availableLanguages } from '../locales/languages.js';
-import { languageManager } from '../utils/LanguageManager.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
 import { webosAdapter } from '../webos/WebOSAdapter.js';
 import { eventBus } from '../core/EventBus.js';
@@ -48,6 +47,7 @@ import { FavoriteLanguagesModal } from './settings/modals/FavoriteLanguagesModal
 import { SelectionModal } from './settings/modals/SelectionModal.js';
 import { SettingsDropdownDispatcher } from './settings/controllers/SettingsDropdownDispatcher.js';
 import { SettingsSlider } from './settings/components/SettingsSlider.js';
+import { loadCultureOptions, getCachedCultures, getFontDropdownOptions, loadFallbackFontOptions } from './settings/helpers/SettingsFontOptions.js';
 
 const log = logger.create('SettingsPage');
 
@@ -70,7 +70,7 @@ class SettingsPage extends Page {
         this.uiLanguages = availableLanguages;
 
         // Preference Languages (Audio/Subtitle) - fetched from server
-        this.prefLanguages = cachedCultures || [{ value: 'Default', label: i18n.t('Default') }];
+        this.prefLanguages = (typeof getCachedCultures !== 'undefined' ? getCachedCultures() : cachedCultures) || [{ value: 'Default', label: i18n.t('Default') }];
 
         // Mobile portrait 2-page navigation state
         // When false, the full category list is displayed; when true, the active tab details are shown.
@@ -106,34 +106,29 @@ class SettingsPage extends Page {
     async onInit() {
         // Populate the font buttons independently of the culture request.
         this._loadFallbackFontOptions();
-        // If we don't have cultures cached, fetch them
-        if (!cachedCultures) {
+
+        // Query or load cached cultures via helper
+        if (typeof loadCultureOptions !== 'undefined') {
+            const cultures = await loadCultureOptions();
+            this.prefLanguages = cultures;
+            if (this.activeTab === 'player' || this.activeTab === 'subtitles') {
+                this._switchTab(this.activeTab, true);
+            }
+        } else if (!cachedCultures) {
             try {
                 const cultures = await api.getCultures();
                 if (cultures && Array.isArray(cultures)) {
-                    // Register dynamic culture mappings in LanguageManager for O(1) matching
-                    languageManager.registerCultures(cultures);
-
-                    // Map to dropdown format and sort alphabetically by display name
-                    cachedCultures = cultures
-                        .map((c) => ({
-                            value: c.ThreeLetterISOLanguageName || c.Name,
-                            label: i18n.ensureBiDi(c.DisplayName),
-                            ThreeLetterISOLanguageName: c.ThreeLetterISOLanguageName,
-                            TwoLetterISOLanguageName: c.TwoLetterISOLanguageName,
-                            DisplayName: c.DisplayName
-                        }))
-                        .sort((a, b) => a.label.localeCompare(b.label));
-
+                    cachedCultures = cultures.map((c) => ({
+                        value: c.ThreeLetterISOLanguageName || c.Name,
+                        label: i18n.ensureBiDi(c.DisplayName)
+                    }));
                     this.prefLanguages = cachedCultures;
-
-                    // Re-render if we are on a tab that uses these languages
                     if (this.activeTab === 'player' || this.activeTab === 'subtitles') {
                         this._switchTab(this.activeTab, true);
                     }
                 }
-            } catch (error) {
-                log.error('Failed to fetch cultures:', error);
+            } catch (err) {
+                log.error('Failed to fetch cultures:', err);
             }
         }
 
@@ -818,16 +813,22 @@ class SettingsPage extends Page {
         }
     }
 
+    /**
+     * Resolves complete list of font dropdown options by combining bundled assets with server fonts.
+     * Delegated to the extracted SettingsFontOptions helper.
+     */
     _getFontDropdownOptions(id, options, currentValue) {
+        if (typeof getFontDropdownOptions !== 'undefined') {
+            return getFontDropdownOptions(this._fallbackFonts, id, options, currentValue);
+        }
         const isFileSelect = id === 'jellyfin-fallback-font-select';
         if (!SERVER_FONT_SELECTS.includes(id)) {
             return options;
         }
-        const fontOptions = this._fallbackFonts.map((font) => ({
+        const fontOptions = (this._fallbackFonts || []).map((font) => ({
             value: isFileSelect ? font.Name : getFallbackFontId(font.Name),
             label: font.Name
         }));
-        // Show the saved filename even before the server responds or while offline.
         const savedName = isFileSelect ? currentValue : getFallbackFontName(currentValue);
         if (savedName && !fontOptions.some((option) => option.label === savedName)) {
             fontOptions.push({ value: currentValue, label: savedName });
@@ -841,7 +842,15 @@ class SettingsPage extends Page {
         return [...bundledOptions, ...fontOptions];
     }
 
+    /**
+     * Loads server fallback fonts and updates dropdown options and button labels.
+     * Delegated to the extracted SettingsFontOptions helper.
+     */
     async _loadFallbackFontOptions() {
+        if (typeof loadFallbackFontOptions !== 'undefined') {
+            await loadFallbackFontOptions(this);
+            return;
+        }
         try {
             this._fallbackFonts = await FontLoader.getFallbackFonts();
             this.$$('.select-btn').forEach((btn) => {
@@ -1127,7 +1136,8 @@ class SettingsPage extends Page {
 
     _showFavoriteLanguagesModal() {
         if (this.favoriteLanguagesModal) {
-            this.favoriteLanguagesModal.open(cachedCultures);
+            const cultures = typeof getCachedCultures !== 'undefined' ? getCachedCultures() : cachedCultures;
+            this.favoriteLanguagesModal.open(cultures);
         }
     }
 

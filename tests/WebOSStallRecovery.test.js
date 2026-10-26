@@ -22,7 +22,7 @@ test('WebOSPlayer: stall recovery timeout is evaluated in milliseconds', () => {
         'utf8'
     );
     const settingsPageSource = readFileSync(
-        new URL('../src/pages/SettingsPage.js', import.meta.url),
+        new URL('../src/pages/settings/SettingsPage.js', import.meta.url),
         'utf8'
     );
 

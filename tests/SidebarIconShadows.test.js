@@ -77,7 +77,7 @@ test('Theme CSS: Frost and Paper themes remove default shadow and support icon s
 
 test('SettingsPage: sidebar-icon-shadows-select is registered and wired in settingsMap', () => {
     // Read SettingsPage source
-    const settingsSource = readFileSync('./src/pages/SettingsPage.js', 'utf8');
+    const settingsSource = readFileSync('./src/pages/settings/SettingsPage.js', 'utf8');
 
     // Confirm dropdown is rendered
     assert.ok(

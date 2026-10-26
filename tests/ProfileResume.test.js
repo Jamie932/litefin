@@ -121,7 +121,7 @@ test('remembering the startup user is independent of resume selection', () => {
 
 test('controls toggle persists and affects the next resume without restarting', () => {
     const { calls, saved, storage, resume } = setup();
-    const source = readFileSync(new URL('../src/pages/SettingsPage.js', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('../src/pages/settings/SettingsPage.js', import.meta.url), 'utf8');
     const block = source.slice(
         source.indexOf('        const profilesOnResumeToggle ='),
         source.indexOf('        const rememberLastUserToggle =')

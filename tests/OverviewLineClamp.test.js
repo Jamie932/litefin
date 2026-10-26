@@ -103,7 +103,7 @@ test('details.css defines all required line-clamp utility classes', () => {
 });
 
 test('SettingsPage has details-overview-max-lines-select and toggle-details-always-show-see-more registered', () => {
-    const settingsContent = readFileSync('src/pages/SettingsPage.js', 'utf8');
+    const settingsContent = readFileSync('src/pages/settings/SettingsPage.js', 'utf8');
 
     assert.ok(
         settingsContent.includes('details-overview-max-lines-select'),

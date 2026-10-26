@@ -180,7 +180,7 @@ test('ScrollController: Mathematical verification that "bottom" alignment signif
 });
 
 test('SettingsPage: includes vertical-scroll-alignment-select with bottom, middle, and top options', () => {
-    const source = readFileSync(new URL('../src/pages/SettingsPage.js', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('../src/pages/settings/SettingsPage.js', import.meta.url), 'utf8');
 
     // 1. Verify that the dropdown ID exists in template
     assert.ok(

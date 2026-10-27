@@ -682,11 +682,15 @@ html[data-layout-media-rows="expanded"] .media-card:hover .card-overlay-label {
     color: #ffffff;
 }
 
-/* Hide the redundant inside info box for expanding & modern library cards */
-html[data-layout-media-rows="expanding"] .media-card[data-context-type="library"]:not(.grid-card) .card-info,
-html[data-layout-media-rows="expanding"] .media-card[data-item-type="CollectionFolder"]:not(.grid-card) .card-info,
-html[data-layout-media-rows="modern"] .media-card[data-context-type="library"]:not(.grid-card) .card-info,
-html[data-layout-media-rows="modern"] .media-card[data-item-type="CollectionFolder"]:not(.grid-card) .card-info {
+/* =========================================================================
+   Library Cards - Inside Info Suppression (Expanding Posters Layout)
+   =========================================================================
+   In expanding layout, library cards render with clean native artwork or
+   centered dynamic overlay labels. The internal .card-info box is suppressed
+   to avoid duplicating title text over the card face.
+   ========================================================================= */
+html[data-layout-media-rows="expanding"] .media-card[data-context-type="library"]:not(.grid-card) .card-info.inside,
+html[data-layout-media-rows="expanding"] .media-card[data-item-type="CollectionFolder"]:not(.grid-card) .card-info.inside {
     display: none !important;
 }
 

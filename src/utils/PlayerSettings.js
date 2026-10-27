@@ -17,6 +17,7 @@ import { logger } from './Logger.js';
 import { storage } from './StorageService.js';
 import { eventBus } from '../core/EventBus.js';
 import { platformInfo } from './PlatformInfo.js';
+import { state } from '../core/StateManager.js';
 
 const log = logger.create('PlayerSettings');
 
@@ -1157,6 +1158,53 @@ export const PlayerSettings = {
         );
 
         return adjustedTicks;
+    },
+
+    /**
+     * Resolves the configured mark as watched completion threshold as a decimal fraction (0.0 to 1.0).
+     *
+     * Evaluates the user preference configured in playback settings:
+     *   - '80'     : 0.80 (Default - accommodates anime/TV closing credits and ED sequences)
+     *   - '85'     : 0.85
+     *   - '90'     : 0.90
+     *   - '95'     : 0.95
+     *   - '100'    : 1.00 (Strict completion only)
+     *   - 'server' : Respects the host server's MaxResumePct setting (falls back to 0.90)
+     *
+     * @returns {number} Fractional value between 0.50 and 1.00
+     */
+    getWatchedThresholdFraction() {
+        // Retrieve the stored configuration key or fallback to Litefin default of 80%
+        const mode = this.get('watchedThreshold') || '80';
+
+        // Respect host Jellyfin server MaxResumePct configuration when requested
+        if (mode === 'server') {
+            // Check persistent storage first, followed by reactive global application state
+            const serverMaxPct = storage.getItem('server:maxResumePct') || (state && state.get('server:maxResumePct'));
+
+            // Check if serverMaxPct is already stored as a valid numeric percentage
+            if (typeof serverMaxPct === 'number' && serverMaxPct > 0 && serverMaxPct <= 100) {
+                return serverMaxPct / 100;
+            }
+
+            // Attempt parsing string representation of the integer percentage
+            const parsed = parseInt(serverMaxPct, 10);
+            if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
+                return parsed / 100;
+            }
+
+            // Fallback to Jellyfin server standard factory default threshold of 90%
+            return 0.9;
+        }
+
+        // Parse explicit percentage options (e.g. '80', '85', '90', '95', '100')
+        const pct = parseInt(mode, 10);
+        if (!isNaN(pct) && pct >= 50 && pct <= 100) {
+            return pct / 100;
+        }
+
+        // Standard Litefin default threshold (80%)
+        return 0.8;
     },
 
     /** Expose platform recommended backend resolver directly */

@@ -48,6 +48,7 @@ import { logger } from '../utils/Logger.js';
 import { pinManager } from '../utils/PinManager.js';
 import { storage } from '../utils/StorageService.js';
 import { getSeriesLastWatchedDates } from '../utils/NextUpActivity.js';
+import { PlayerSettings } from '../utils/PlayerSettings.js';
 
 const log = logger.create('SmartHubManager');
 
@@ -337,6 +338,13 @@ class SmartHubManager {
             const homeRowLimit = parseInt(storage.getItem('pref:homeRowsLimit') || 12, 10);
             const mergedParams = { limit: Math.max(10, homeRowLimit) };
 
+            // Retrieve configured mark as watched threshold fraction and percentage
+            const thresholdFraction = PlayerSettings.getWatchedThresholdFraction();
+            const watchedThresholdPct = Math.round(thresholdFraction * 100);
+
+            // Pass watched threshold percentage to server companion plugin query parameters
+            mergedParams.watchedThreshold = watchedThresholdPct;
+
             // Compute cutoff timestamp if a positive days limit constraint is defined
             let cutoffIso = null;
             if (daysLimit > 0) {
@@ -355,10 +363,31 @@ class SmartHubManager {
                 log.info('Attempting to fetch pre-merged continue/next-up items from Litefin plugin');
                 const response = await api.getMergedRows(mergedParams);
                 if (response && response.Items && response.Items.length > 0) {
-                    // Filter out container items defensively
-                    const validPluginItems = response.Items.filter(
-                        (item) => item && item.Type !== 'Season' && item.Type !== 'Series' && !item.IsFolder
-                    );
+                    // Filter out container items and finished/watched items defensively
+                    const validPluginItems = response.Items.filter((item) => {
+                        // Exclude invalid items and container folders
+                        if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder) {
+                            return false;
+                        }
+
+                        // Exclude items already marked as watched/played
+                        if (item.UserData?.Played) {
+                            return false;
+                        }
+
+                        // Exclude items that have reached or passed the configured watched threshold
+                        const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                        const runTimeTicks = item.RunTimeTicks || 0;
+                        if (positionTicks > 0 && runTimeTicks > 0) {
+                            const progress = positionTicks / runTimeTicks;
+                            if (progress >= thresholdFraction) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    });
+
                     if (validPluginItems.length > 0) {
                         log.info('Successfully fetched merged items from server-side Litefin plugin');
                         mergedItems = validPluginItems.slice(0, 10);
@@ -402,9 +431,31 @@ class SmartHubManager {
                 ]);
 
                 // Map items and tag them so we can distinguish them during sorting.
-                // Filter out any container items (Seasons/Series) to ensure only playable media displays.
+                // Filter out container items and finished/watched items defensively.
                 const resumeItems = (resumeRes?.Items || [])
-                    .filter((item) => item && item.Type !== 'Season' && item.Type !== 'Series' && !item.IsFolder)
+                    .filter((item) => {
+                        // Drop invalid items and container folders
+                        if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder) {
+                            return false;
+                        }
+
+                        // Exclude items already marked as watched/played
+                        if (item.UserData?.Played) {
+                            return false;
+                        }
+
+                        // Exclude items that have reached or passed the configured watched threshold
+                        const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                        const runTimeTicks = item.RunTimeTicks || 0;
+                        if (positionTicks > 0 && runTimeTicks > 0) {
+                            const progress = positionTicks / runTimeTicks;
+                            if (progress >= thresholdFraction) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    })
                     .map((item) => ({
                         ...item,
                         _isResume: true

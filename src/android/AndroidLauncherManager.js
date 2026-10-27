@@ -46,6 +46,7 @@ import { pinManager } from '../utils/PinManager.js';
 import { storage } from '../utils/StorageService.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
 import { getSeriesLastWatchedDates } from '../utils/NextUpActivity.js';
+import { PlayerSettings } from '../utils/PlayerSettings.js';
 
 const log = logger.create('AndroidLauncherManager');
 
@@ -315,9 +316,15 @@ class AndroidLauncherManager {
             // ── Phase 1: Query server-side Litefin companion plugin ─────────
             const maxDays = parseInt(storage.getItem('pref:nextUpMaxDays'), 10);
             const daysLimit = isNaN(maxDays) ? 365 : maxDays;
+
+            // Retrieve configured mark as watched threshold fraction and percentage
+            const thresholdFraction = PlayerSettings.getWatchedThresholdFraction();
+            const watchedThresholdPct = Math.round(thresholdFraction * 100);
+
             const mergedParams = {
                 limit: 10,
-                fields: 'Overview,SeriesThumbImageTag,ParentThumbImageTag,BackdropImageTags,ParentBackdropImageTags'
+                fields: 'Overview,SeriesThumbImageTag,ParentThumbImageTag,BackdropImageTags,ParentBackdropImageTags',
+                watchedThreshold: watchedThresholdPct
             };
 
             let cutoffIso = null;
@@ -333,9 +340,31 @@ class AndroidLauncherManager {
                 log.info('Attempting to fetch pre-merged continue/next-up items from Litefin plugin');
                 const response = await api.getMergedRows(mergedParams);
                 if (response && response.Items && response.Items.length > 0) {
-                    const validPluginItems = response.Items.filter(
-                        (item) => item && item.Type !== 'Season' && item.Type !== 'Series' && !item.IsFolder
-                    );
+                    // Filter out container folders and finished/watched items defensively
+                    const validPluginItems = response.Items.filter((item) => {
+                        // Exclude invalid items and container folders
+                        if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder) {
+                            return false;
+                        }
+
+                        // Exclude items already marked as watched/played
+                        if (item.UserData?.Played) {
+                            return false;
+                        }
+
+                        // Exclude items that have reached or passed the configured watched threshold
+                        const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                        const runTimeTicks = item.RunTimeTicks || 0;
+                        if (positionTicks > 0 && runTimeTicks > 0) {
+                            const progress = positionTicks / runTimeTicks;
+                            if (progress >= thresholdFraction) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    });
+
                     if (validPluginItems.length > 0) {
                         log.info('Successfully fetched pre-merged items from server companion plugin');
                         mergedItems = validPluginItems.slice(0, 10);
@@ -373,9 +402,31 @@ class AndroidLauncherManager {
                     })()
                 ]);
 
-                // Filter and tag resume items
+                // Filter and tag resume items, removing played items and items past watched threshold
                 const resumeItems = (resumeRes?.Items || [])
-                    .filter((item) => item && item.Type !== 'Season' && item.Type !== 'Series' && !item.IsFolder)
+                    .filter((item) => {
+                        // Drop invalid items and container folders
+                        if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder) {
+                            return false;
+                        }
+
+                        // Exclude items already marked as watched/played
+                        if (item.UserData?.Played) {
+                            return false;
+                        }
+
+                        // Exclude items that have reached or passed the configured watched threshold
+                        const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                        const runTimeTicks = item.RunTimeTicks || 0;
+                        if (positionTicks > 0 && runTimeTicks > 0) {
+                            const progress = positionTicks / runTimeTicks;
+                            if (progress >= thresholdFraction) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    })
                     .map((item) => ({ ...item, _isResume: true }));
 
                 // Filter and tag next-up items

@@ -48,6 +48,7 @@ import { homeLayoutManager } from '../utils/HomeLayoutManager.js';
 import { pluginManager } from '../plugins/PluginManager.js';
 import HeroCarousel from '../ui/HeroCarousel.js';
 import { getSeriesLastWatchedDates } from '../utils/NextUpActivity.js';
+import { PlayerSettings } from '../utils/PlayerSettings.js';
 
 const log = logger.create('HomePage');
 
@@ -746,6 +747,13 @@ class HomePage extends Page {
                     const daysLimit = isNaN(maxDays) ? 365 : maxDays;
                     const mergedParams = { limit: homeRowLimit };
 
+                    // Retrieve configured mark as watched threshold fraction and percentage
+                    const thresholdFraction = PlayerSettings.getWatchedThresholdFraction();
+                    const watchedThresholdPct = Math.round(thresholdFraction * 100);
+
+                    // Pass watched threshold percentage to server companion plugin query parameters
+                    mergedParams.watchedThreshold = watchedThresholdPct;
+
                     // Calculate cutoff threshold timestamp if a positive limit is enforced
                     let cutoffIso = null;
                     if (daysLimit > 0) {
@@ -768,8 +776,35 @@ class HomePage extends Page {
                         // Older or misconfigured server plugins can return Id: "0", which causes broken routes.
                         const hasCorruptIds = response?.Items?.some((i) => !i.Id || i.Id === '0');
                         if (response && response.Items && response.Items.length > 0 && !hasCorruptIds) {
-                            log.info('Successfully fetched merged items from server-side Litefin plugin');
-                            return response.Items;
+                            // Defensively filter items to ensure finished items and items exceeding watched threshold are excluded
+                            const filteredPluginItems = response.Items.filter((item) => {
+                                // Exclude invalid items and container folders
+                                if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder) {
+                                    return false;
+                                }
+
+                                // Exclude items already marked as watched/played
+                                if (item.UserData?.Played) {
+                                    return false;
+                                }
+
+                                // Exclude items that have reached or exceeded the configured watched threshold percentage
+                                const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                                const runTimeTicks = item.RunTimeTicks || 0;
+                                if (positionTicks > 0 && runTimeTicks > 0) {
+                                    const progress = positionTicks / runTimeTicks;
+                                    if (progress >= thresholdFraction) {
+                                        return false;
+                                    }
+                                }
+
+                                return true;
+                            });
+
+                            if (filteredPluginItems.length > 0) {
+                                log.info('Successfully fetched and verified merged items from server-side Litefin plugin');
+                                return filteredPluginItems;
+                            }
                         }
 
                         if (hasCorruptIds) {
@@ -805,13 +840,35 @@ class HomePage extends Page {
                     ]);
 
                     // Extract items list safely and tag them with a transient _isResume flag.
-                    // This flag enables the sorting comparator to distinguish between resume items
-                    // (which should sort by direct pause dates) and next-up items (which should
-                    // sort by show activity dates).
-                    const resumeItems = (resumeRes?.Items || []).map((item) => ({
-                        ...item,
-                        _isResume: true
-                    }));
+                    // Filter out finished items and items that have reached the configured watched threshold.
+                    const resumeItems = (resumeRes?.Items || [])
+                        .filter((item) => {
+                            // Defensive guard: Drop non-playable container folders
+                            if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder) {
+                                return false;
+                            }
+
+                            // Exclude items already marked as watched/played
+                            if (item.UserData?.Played) {
+                                return false;
+                            }
+
+                            // Exclude items that have reached or passed the configured watched threshold
+                            const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                            const runTimeTicks = item.RunTimeTicks || 0;
+                            if (positionTicks > 0 && runTimeTicks > 0) {
+                                const progress = positionTicks / runTimeTicks;
+                                if (progress >= thresholdFraction) {
+                                    return false;
+                                }
+                            }
+
+                            return true;
+                        })
+                        .map((item) => ({
+                            ...item,
+                            _isResume: true
+                        }));
 
                     const nextUpItems = (nextUpRes?.Items || [])
                         .filter((item) => {
@@ -928,7 +985,29 @@ class HomePage extends Page {
                 contextType: 'resume',
                 fetchFn: async () => {
                     const res = await api.getResumeItems({ Limit: homeRowLimit });
-                    return res?.Items?.length > 0 ? res.Items : null;
+                    if (!res?.Items?.length) return null;
+
+                    // Defensively filter items using configured watched threshold
+                    const thresholdFraction = PlayerSettings.getWatchedThresholdFraction();
+                    const filtered = res.Items.filter((item) => {
+                        // Drop invalid items and container folders
+                        if (!item || item.IsFolder) return false;
+
+                        // Exclude items already marked as watched/played
+                        if (item.UserData?.Played) return false;
+
+                        // Exclude items that have reached or passed the watched threshold
+                        const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                        const runTimeTicks = item.RunTimeTicks || 0;
+                        if (positionTicks > 0 && runTimeTicks > 0) {
+                            const progress = positionTicks / runTimeTicks;
+                            if (progress >= thresholdFraction) return false;
+                        }
+
+                        return true;
+                    });
+
+                    return filtered.length > 0 ? filtered : null;
                 }
             });
 

@@ -4838,30 +4838,8 @@ class PlayerPage extends Page {
      * @returns {number} Fractional value between 0.0 and 1.0
      */
     _getWatchedThresholdFraction() {
-        const mode = PlayerSettings.get('watchedThreshold') || '80';
-
-        // Respect the Jellyfin host's MaxResumePct server setting
-        if (mode === 'server') {
-            const serverMaxPct = storage.getItem('server:maxResumePct') || state.get('server:maxResumePct');
-            if (typeof serverMaxPct === 'number' && serverMaxPct > 0 && serverMaxPct <= 100) {
-                return serverMaxPct / 100;
-            }
-            const parsed = parseInt(serverMaxPct, 10);
-            if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
-                return parsed / 100;
-            }
-            // Fallback to Jellyfin's standard factory default (90%)
-            return 0.9;
-        }
-
-        // Parse explicit percentage choices (e.g. '80', '85', '90', '95', '100')
-        const pct = parseInt(mode, 10);
-        if (!isNaN(pct) && pct >= 50 && pct <= 100) {
-            return pct / 100;
-        }
-
-        // Standard Litefin fallback threshold
-        return 0.8;
+        // Delegate to centralized PlayerSettings helper so playback, home rows, and companion plugins share logic
+        return PlayerSettings.getWatchedThresholdFraction();
     }
 
     /**

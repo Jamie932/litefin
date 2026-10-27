@@ -25,7 +25,7 @@
         "alwaysOnTop": false,
         "center": true,
         "zoomHotkeysEnabled": true,
-        "transparent": true,
+        "transparent": false,
         "devtools": true
       }
     ],

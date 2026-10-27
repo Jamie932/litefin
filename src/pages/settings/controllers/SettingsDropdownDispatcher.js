@@ -142,6 +142,7 @@ export class SettingsDropdownDispatcher {
             'button-style-select': () => layoutManager.setButtonStyle(newValue),
             'focus-border-style-select': () => layoutManager.setFocusBorderStyle(newValue),
             'hover-border-style-select': () => layoutManager.setHoverBorderStyle(newValue),
+            'sidebar-layout-select': () => layoutManager.setSidebarLayout(newValue),
             'sidebar-selected-color-select': () => layoutManager.setSidebarSelectedColor(newValue),
             'sidebar-unselected-color-select': () => layoutManager.setSidebarUnselectedColor(newValue),
             'sidebar-logo-color-select': () => layoutManager.setSidebarLogoColor(newValue),
@@ -152,6 +153,11 @@ export class SettingsDropdownDispatcher {
             'osd-unfocused-button-style-select': () => layoutManager.setOsdUnfocusedButtonStyle(newValue),
             'osd-seekbar-thumb-color-select': () => layoutManager.setOsdSeekBarThumbColor(newValue),
             'osd-seekbar-progress-color-select': () => layoutManager.setOsdSeekBarProgressColor(newValue),
+            'ui-font-select': () => layoutManager.setUiFont(newValue),
+            'display-scale-select': () => layoutManager.setDisplayScale(newValue),
+            'text-scale-select': () => layoutManager.setTextScale(newValue),
+            'card-label-scale-select': () => layoutManager.setCardLabelScale(newValue),
+            'hero-carousel-vignette-select': () => layoutManager.setHeroVignette(newValue),
             'theme-mode-select': () => {
                 layoutManager.setThemeMode(newValue);
                 this.page._updateLighterBackgroundVisibility?.();

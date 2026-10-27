@@ -111,8 +111,46 @@ function getPlugins(tier, options = {}) {
         { from: 'assets/icon-130.png', to: 'assets/icon-130.png' },
         // Copy general assets (images, resources, etc.)
         { from: 'src/assets', to: 'assets', noErrorOnMissing: true },
-        // Copy translation localization files
-        { from: 'src/locales', to: 'locales' },
+        /*
+         * Translation localization dictionaries (src/locales/*.json):
+         * While source files remain formatted with 4-space indentation for human
+         * translators, shipping pretty-printed JSON directly to embedded TV environments
+         * wastes bandwidth and increases JSON.parse parse times on low-power CPUs.
+         * We apply a build-time transform to strip whitespace, newlines, and internal
+         * metadata/section comment keys (prefixed with '_') across all distributed bundles.
+         */
+        {
+            from: 'src/locales',
+            to: 'locales',
+            transform(content, absoluteFrom) {
+                // Ensure we only process JSON files
+                if (typeof absoluteFrom === 'string' && absoluteFrom.endsWith('.json')) {
+                    try {
+                        // Parse raw JSON buffer to a JavaScript object
+                        const parsed = JSON.parse(content.toString('utf8'));
+                        const cleaned = {};
+
+                        // Filter out section heading comments (e.g. "_Litefin Specific Keys")
+                        const keys = Object.keys(parsed);
+                        for (let i = 0; i < keys.length; i++) {
+                            const key = keys[i];
+                            if (!key.startsWith('_')) {
+                                cleaned[key] = parsed[key];
+                            }
+                        }
+
+                        // Emit single-line, fully minified JSON payload
+                        return JSON.stringify(cleaned);
+                    } catch (err) {
+                        // In case of syntax or parse issues, fallback gracefully to raw content
+                        return content;
+                    }
+                }
+
+                // Non-JSON assets (e.g. languages.js) pass through unmutated
+                return content;
+            }
+        },
         /*
          * libpgs web worker ships unminified (95% comments) and is a Worker-script
          * payload outside webpack's graph -> stripped via transform below.

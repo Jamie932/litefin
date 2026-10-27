@@ -44,6 +44,8 @@ import {
     GLIDE_ZONE_MAX_PX,
     GLIDE_FALLBACK_SPEED_PX_MS,
     GLIDE_MIN_DURATION_MS,
+    GLIDE_ALPHA_MAX,
+    getHorizontalDurationMs,
     NOMINAL_FRAME_MS,
     CADENCE_DT_MAX_MS,
     stableFrameDelta
@@ -71,9 +73,6 @@ function getBaseVerticalDuration() {
     if (pref === 'smooth') return isDesktop ? 200 : 240;
     return isDesktop ? 130 : 180;
 }
-
-// Animation duration (ms) for horizontal card-centering scrolls
-const SCROLL_DURATION_HORIZONTAL = 120;
 
 // Minimum pixel difference to consider "not at target" (avoids sub-pixel jitter)
 const SCROLL_SNAP_THRESHOLD = 1;
@@ -573,6 +572,19 @@ class ScrollController {
     }
 
     /**
+     * Resolves the horizontal (media-row) scroll animation duration (ms).
+     * Honors the same 4-value scrollSmoothingDuration preference as vertical
+     * navigation ('instant' | 'current' | 'smooth' | 'slower'), mapped to
+     * proportionally quicker timings since row hops are shorter.
+     * @returns {number}
+     */
+    getHorizontalScrollDuration() {
+        const pref = storage.getItem('pref:scrollSmoothingDuration') || 'smooth';
+        const isDesktop = platformInfo.isDesktop || platformInfo.isWeb;
+        return getHorizontalDurationMs(pref, isDesktop);
+    }
+
+    /**
      * Smooth scroll with easeOutQuad easing and retarget support.
      *
      * Uses a time-based animation with proper easing curve.
@@ -607,7 +619,7 @@ class ScrollController {
                     : duration
                 : isVertical
                   ? this.getVerticalScrollDuration()
-                  : SCROLL_DURATION_HORIZONTAL;
+                  : this.getHorizontalScrollDuration();
         if (scrollMode === 'instant' || durationPref === 'instant') {
             durationToUse = 0;
         }
@@ -1109,12 +1121,21 @@ class ScrollController {
             if (Math.abs(existing.target - targetX) < SCROLL_SNAP_THRESHOLD) {
                 return;
             }
+            // VELOCITY CONTINUITY: re-aim without touching current (x, v).
+            // Fresh settle budget and glide band for long re-aims.
             existing.target = targetX;
             existing.startTime = null;
+            existing.elapsed = 0;
+            existing.glide = null;
+            existing.glideZone = Math.min(
+                GLIDE_ZONE_MAX_PX,
+                Math.abs(existing.target - existing.x) * GLIDE_ZONE_FRACTION
+            );
+            // Rail/fling derive their speed from remaining distance — refresh.
             if (existing.engine === 'rail') {
-                this._refreshRailState(existing, SCROLL_DURATION_HORIZONTAL);
+                this._refreshRailState(existing, this.getHorizontalScrollDuration());
             } else if (existing.engine === 'fling') {
-                this._refreshFlingState(existing, SCROLL_DURATION_HORIZONTAL);
+                this._refreshFlingState(existing, this.getHorizontalScrollDuration());
             }
             return;
         }
@@ -1133,7 +1154,7 @@ class ScrollController {
             scrollMode: 'gpu',
             current: currentX,
             target: targetX,
-            duration: SCROLL_DURATION_HORIZONTAL,
+            duration: this.getHorizontalScrollDuration(),
             _write: (value) => {
                 const transformStr = transformFor(value);
                 track.style.webkitTransform = transformStr;
@@ -1366,7 +1387,7 @@ class ScrollController {
                     x0: s.x,
                     // signed remaining keeps the closing direction implicit
                     R: s.target - s.x,
-                    alpha: Math.min((vEntry * dur) / remaining, 3),
+                    alpha: Math.min((vEntry * dur) / remaining, GLIDE_ALPHA_MAX),
                     start: s.elapsed,
                     dur
                 };
@@ -2048,7 +2069,12 @@ class ScrollController {
                             if (isInstant) {
                                 rowItems.scrollLeft = signedLeft;
                             } else {
-                                this.smoothScrollTo(rowItems, signedLeft, SCROLL_DURATION_HORIZONTAL, 'horizontal');
+                                this.smoothScrollTo(
+                                    rowItems,
+                                    signedLeft,
+                                    this.getHorizontalScrollDuration(),
+                                    'horizontal'
+                                );
                             }
                         } else if (isInstant) {
                             // =========================================================
@@ -2139,7 +2165,7 @@ class ScrollController {
                     this.smoothScrollTo(
                         rowItems,
                         finalScrollLeft,
-                        isInstant ? 0 : SCROLL_DURATION_HORIZONTAL,
+                        isInstant ? 0 : this.getHorizontalScrollDuration(),
                         'horizontal'
                     );
                 }

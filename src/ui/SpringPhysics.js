@@ -134,10 +134,30 @@ export const GLIDE_ZONE_MAX_PX = 90;
 /** Fallback entry speed + average closing-speed floor for the glide
  * (0.5px/ms = 8px per 60Hz frame). */
 export const GLIDE_FALLBACK_SPEED_PX_MS = 0.5;
+/** Maximum glide duration bound derived in the loop (alpha stays ≤ 3). */
+export const GLIDE_ALPHA_MAX = 3;
 /** Minimum glide duration (ms) — keeps the closing phase multi-frame even
  * when the handover happens close to the target (throttled/skipped frames;
  * bounded above by the 3·rem/v natural so alpha stays ≤ 3 = monotone). */
 export const GLIDE_MIN_DURATION_MS = 110;
+
+/**
+ * Horizontal (media-row) settle duration by the 4-value
+ * 'pref:scrollSmoothingDuration' setting. Horizontal hops are short
+ * (≈ one card width), so the values run proportionally quicker than the
+ * vertical mapping for the same preference — tuned per platform for an
+ * even perceived pace with vertical navigation.
+ *
+ * @param {string} pref - 'instant' | 'current' | 'smooth' | 'slower'
+ * @param {boolean} isDesktop - Desktop / web platform flag
+ * @returns {number} Duration in ms (0 = instant snap)
+ */
+export function getHorizontalDurationMs(pref, isDesktop) {
+    if (pref === 'instant') return 0;
+    if (pref === 'current') return isDesktop ? 90 : 110;
+    if (pref === 'slower') return isDesktop ? 190 : 220;
+    return isDesktop ? 130 : 160;
+}
 
 /**
  * Fixed integration cadence. The loop integrates the SAME dt every frame —

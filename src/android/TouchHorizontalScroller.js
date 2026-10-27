@@ -49,7 +49,8 @@ import {
     CHASE_TAU_FACTOR,
     RAIL_DECEL_ZONE_FRACTION,
     FLING_VELOCITY_MULTIPLIER,
-    PHYSICS_SETTLE_DISTANCE_PX
+    PHYSICS_SETTLE_DISTANCE_PX,
+    getHorizontalDurationMs
 } from '../ui/SpringPhysics.js';
 
 const log = logger.create('TouchHorizontalScroller');
@@ -462,7 +463,23 @@ export class TouchHorizontalScroller {
         this._cancelSettle(rowItems);
         const engine = this._getEngine();
         const distance = Math.abs(to - from);
-        const duration = Math.min(MAX_SETTLE_MS, Math.max(120, distance * 0.5));
+        // Settle budget follows the same 4-value scrollSmoothingDuration
+        // preference as everything else ('instant' | 'current' | 'smooth' |
+        // 'slower'), scaled up for larger post-fling residuals so big
+        // catch-ups still sweep instead of lurching.
+        const pref = storage.getItem('pref:scrollSmoothingDuration') || 'smooth';
+        const base = getHorizontalDurationMs(pref, platformInfo.isDesktop || platformInfo.isWeb);
+        if (base <= 0) {
+            // Instant preference: snap onto the card directly.
+            this._writeScroll(rowItems, to, isRtl);
+            if (row) {
+                row.syncScrollToPosition(to);
+                row.endTouchScroll(to);
+            }
+            eventBus.emit('scroll:finished');
+            return;
+        }
+        const duration = Math.min(MAX_SETTLE_MS, Math.max(base, Math.round(distance * 0.5)));
 
         // Shared position writer: drives the native scrollLeft AND keeps
         // VirtualCardRow's virtual window synchronized mid-animation.

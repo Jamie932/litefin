@@ -242,7 +242,8 @@ test('TouchHorizontalScroller: engine parameter derivation matches ScrollControl
     const scroller = new TouchHorizontalScroller();
     const { rowItems, row } = makeFakeTouchRow(0);
 
-    // 400px hop → duration = min(600, max(120, 400*0.5)) = 200ms budget
+    // 400px hop → duration = min(600, max(base, 400*0.5)) = 200ms budget
+    // (the pref-derived base on desktop is 130ms, so the distance term wins)
     scroller._animateSettle(rowItems, row, 0, 400, false);
     let state = scroller._settleAnims.get(rowItems);
     tweenCleanup(state, scroller, rowItems, 'chase tau');
@@ -273,6 +274,37 @@ test('TouchHorizontalScroller: engine parameter derivation matches ScrollControl
 
     storage.removeItem('pref:scrollPhysics');
 });
+
+/**
+ * ============================================================================
+ * Horizontal settle duration follows the 4-value duration preference
+ * ============================================================================
+ */
+test('TouchHorizontalScroller: instant duration preference snaps the settle with no animation', () => {
+    storage.setItem('pref:scrollSmoothingDuration', 'instant');
+    const scroller = new TouchHorizontalScroller();
+    const { rowItems, row, calls } = makeFakeTouchRow(0);
+
+    scroller._animateSettle(rowItems, row, 0, 400, false);
+
+    // No physics state may spin up — the reel must land directly on target.
+    assert.ok(!scroller._settleAnims.has(rowItems), 'instant preference must not start a settle animation');
+    assert.strictEqual(writesTarget(rowItems), 400, 'instant preference must write the target immediately');
+    assert.strictEqual(calls.endScroll[0], 400, 'instant preference must finalize endTouchScroll immediately');
+
+    storage.removeItem('pref:scrollSmoothingDuration');
+    calls.endScroll.length = 0;
+    void row;
+});
+
+/**
+ * Reads the raw scrollLeft the fake row currently stands on.
+ * @param {Object} rowItems
+ * @returns {number}
+ */
+function writesTarget(rowItems) {
+    return rowItems.raw ? rowItems.raw.scrollLeft : rowItems.scrollLeft;
+}
 
 /**
  * Cancels a running settle safely (helper to keep the derivation test tidy).

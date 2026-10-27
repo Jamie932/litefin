@@ -83,6 +83,33 @@ function getMinimizers() {
 // ============================================================================
 // Shared plugins factory
 // ============================================================================
+// Master Localization Source Dictionary (en-us.json)
+// ============================================================================
+// Lazily loads and caches the canonical English localization dictionary.
+// Used during build-time packaging to prune redundant untranslated strings
+// from non-English locale files, relying on i18n.js fallback resolution.
+let masterEnUsLocale = null;
+function getMasterEnUsLocale() {
+    // Return cached dictionary if already parsed from disk
+    if (masterEnUsLocale) {
+        return masterEnUsLocale;
+    }
+
+    try {
+        // Resolve absolute path to the canonical English locale file
+        const enPath = path.resolve(__dirname, 'src/locales/en-us.json');
+
+        // Read and parse the source dictionary synchronously
+        masterEnUsLocale = JSON.parse(fs.readFileSync(enPath, 'utf8'));
+    } catch (err) {
+        // Fallback to empty dictionary if source file cannot be read
+        masterEnUsLocale = {};
+    }
+
+    return masterEnUsLocale;
+}
+
+// ============================================================================
 /**
  * Factory function to generate Webpack plugins required for different tiers.
  * Supports customizing the application icon source.
@@ -116,8 +143,15 @@ function getPlugins(tier, options = {}) {
          * While source files remain formatted with 4-space indentation for human
          * translators, shipping pretty-printed JSON directly to embedded TV environments
          * wastes bandwidth and increases JSON.parse parse times on low-power CPUs.
-         * We apply a build-time transform to strip whitespace, newlines, and internal
-         * metadata/section comment keys (prefixed with '_') across all distributed bundles.
+         *
+         * We apply two build-time optimizations:
+         * 1. Minification & Comment Stripping: Strips whitespace, newlines, and internal
+         *    metadata/section comment keys (prefixed with '_').
+         * 2. Fallback Deduplication: For all non-English locales, any key whose value is
+         *    identical to en-us.json is omitted from the bundled output. Since i18n.js
+         *    already loads en-us.json as its fallback dictionary, omitted strings resolve
+         *    transparently with zero visual difference while saving hundreds of kilobytes
+         *    across TV packages.
          */
         {
             from: 'src/locales',
@@ -130,16 +164,31 @@ function getPlugins(tier, options = {}) {
                         const parsed = JSON.parse(content.toString('utf8'));
                         const cleaned = {};
 
-                        // Filter out section heading comments (e.g. "_Litefin Specific Keys")
+                        // Check if this file is the primary English source-of-truth
+                        const isPrimaryEnglish = absoluteFrom.endsWith('en-us.json');
+                        const masterEnglish = isPrimaryEnglish ? null : getMasterEnUsLocale();
+
+                        // Process and filter dictionary keys
                         const keys = Object.keys(parsed);
                         for (let i = 0; i < keys.length; i++) {
                             const key = keys[i];
-                            if (!key.startsWith('_')) {
-                                cleaned[key] = parsed[key];
+
+                            // Skip internal documentation comments (e.g. "_Litefin Specific Keys")
+                            if (key.startsWith('_')) {
+                                continue;
                             }
+
+                            const val = parsed[key];
+
+                            // For non-English locales, omit untranslated keys identical to English fallback
+                            if (!isPrimaryEnglish && masterEnglish && val === masterEnglish[key]) {
+                                continue;
+                            }
+
+                            cleaned[key] = val;
                         }
 
-                        // Emit single-line, fully minified JSON payload
+                        // Emit single-line, fully minified and deduplicated JSON payload
                         return JSON.stringify(cleaned);
                     } catch (err) {
                         // In case of syntax or parse issues, fallback gracefully to raw content

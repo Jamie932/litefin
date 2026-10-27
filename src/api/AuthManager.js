@@ -39,7 +39,6 @@ import { storage } from '../utils/StorageService.js';
 import { buildJellyfinProfile, clearCapabilitiesCache } from './DeviceProfile.js';
 import { focusManager } from '../ui/FocusManager.js';
 import { imageCache } from '../utils/ImageCache.js';
-import { seerr } from './seerrClient.js';
 import { customHeaders } from '../utils/CustomHeaders.js';
 import { logger } from '../utils/Logger.js';
 
@@ -863,6 +862,24 @@ class AuthManager {
     // ========================================================================
 
     /**
+     * Clears the Seerr client response cache after a login or user switch so
+     * user-scoped requests and watchlist data are refetched. The module is
+     * dynamically imported: seerrClient is only ever needed by the Seerr
+     * feature pages and UI probes, so keeping this reference lazy lets the
+     * bundler drop it (and its normalize/genre helpers) out of the initial
+     * main bundle on TV tiers.
+     *
+     * @private
+     */
+    _clearSeerrCache() {
+        import('./seerrClient.js')
+            .then((module) => module.seerr.clearCache())
+            .catch(() => {
+                /* seerr plugin not configured for this server — nothing to clear */
+            });
+    }
+
+    /**
      * Switch the active user to another stored session without requiring
      * a password. The ApiClient credentials are swapped, capabilities are
      * re-reported, and the WebSocket is reset to the new user's token.
@@ -897,7 +914,7 @@ class AuthManager {
         state.clearByPrefix('discover:');
 
         // Wipe Seerr client response cache so user-scoped requests and watchlist are refetched
-        seerr.clearCache();
+        this._clearSeerrCache();
 
         // Clear focus memory so old user's spatial focus targets don't persist
         focusManager.clearMemory();
@@ -999,7 +1016,7 @@ class AuthManager {
         state.clearByPrefix('discover:');
 
         // Wipe Seerr client response cache so user-scoped requests and watchlist are refetched
-        seerr.clearCache();
+        this._clearSeerrCache();
 
         // Clear focus manager memory
         focusManager.clearMemory();

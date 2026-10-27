@@ -27,7 +27,6 @@ import { logger } from '../utils/Logger.js';
 import { i18n } from '../utils/i18n.js';
 import { syncPlayGroupMenu } from '../core/syncplay/SyncPlayGroupMenu.js';
 import { sidebarIcons, getLibraryIcon } from '../utils/Icons.js';
-import { seerr } from '../api/seerrClient.js';
 import { storage } from '../utils/StorageService.js';
 import { timeManager } from '../utils/TimeManager.js';
 
@@ -906,7 +905,11 @@ export class MobileNav extends Component {
     async _probeSeerr() {
         if (!auth.isAuthenticated()) return;
 
+        // seerrClient is dynamically imported so it (and its normalize/genre
+        // helpers) stay out of the initial main bundle on TV tiers. Only this
+        // Discover-tab probe needs it on the app shell.
         try {
+            const { seerr } = await import('../api/seerrClient.js');
             const available = await seerr.isAvailable();
             this._setSeerrAvailable(available);
         } catch (e) {

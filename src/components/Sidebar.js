@@ -19,7 +19,6 @@ import { pluginManager } from '../plugins/PluginManager.js';
 import { storage } from '../utils/StorageService.js';
 import { sidebarLayoutManager } from '../utils/SidebarLayoutManager.js';
 import { sidebarIcons, getLibraryIcon } from '../utils/Icons.js';
-import { seerr } from '../api/seerrClient.js';
 import { layoutManager } from '../ui/LayoutManager.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
 
@@ -437,7 +436,16 @@ class Sidebar extends Component {
         // The auth:restored → _onAuthChange path ensures we re-run once ready.
         if (!auth.isAuthenticated()) return;
 
-        const isAvailable = await seerr.isAvailable();
+        // seerrClient is dynamically imported so it (and its normalize/genre
+        // helpers) stay out of the initial main bundle on TV tiers. Only the
+        // Discover-visibility probe needs it on the app shell.
+        let isAvailable = false;
+        try {
+            const { seerr } = await import('../api/seerrClient.js');
+            isAvailable = await seerr.isAvailable();
+        } catch (err) {
+            log.warn('Seerr availability probe failed', err);
+        }
 
         // Cache locally so _applySidebarLayout() can preserve this state
         // across any layout rebuild without an additional network call

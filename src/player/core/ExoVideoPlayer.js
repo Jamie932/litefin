@@ -283,9 +283,14 @@ export class ExoVideoPlayer {
         this._audioTracks = [];
 
         // Operational flags
+        // Tracks play/pause state of native player
         this._isPaused = false;
+        // Guards against seeking races
         this._isSeeking = false;
+        // Guards against premature timeupdate emissions during initial buffer
         this._isBuffering = false;
+        // Tracks whether media has naturally reached playback completion
+        this._isEnded = false;
 
         // Startup watchdog timer
         this._startupWatchdogTimer = null;
@@ -324,12 +329,19 @@ export class ExoVideoPlayer {
                 log.debug('ExoPlayer state event received:', data);
             }
 
+            // -----------------------------------------------------------------
+            // State: Buffering
+            // -----------------------------------------------------------------
             if (data.state === 'buffering') {
                 this._isBuffering = true;
                 this.onEvent({ type: PlayerEvent.WAITING });
+            // -----------------------------------------------------------------
+            // State: Ready (Decoders primed and initial frame rendered/ready)
+            // -----------------------------------------------------------------
             } else if (data.state === 'ready') {
                 this._clearStartupWatchdog();
                 this._isBuffering = false;
+                this._isEnded = false;
 
                 if (!this._started) {
                     this._started = true;
@@ -339,20 +351,38 @@ export class ExoVideoPlayer {
                 } else if (!this._isPaused) {
                     this.onEvent({ type: PlayerEvent.PLAYING });
                 }
+            // -----------------------------------------------------------------
+            // State: Ended (Natural completion of media stream)
+            // -----------------------------------------------------------------
             } else if (data.state === 'ended') {
-                this._isBuffering = false;
-                this.onEvent({ type: PlayerEvent.ENDED });
+                // Guarantee idempotent completion dispatch — only fire once per session
+                if (!this._isEnded) {
+                    log.info('ExoPlayer reported state=ended; dispatching ENDED event');
+                    this._clearStartupWatchdog();
+                    this._isBuffering = false;
+                    this._isEnded = true;
+                    this._isPaused = false;
+                    this._stopPollingLoop();
+                    this.onEvent({ type: PlayerEvent.ENDED });
+                }
             }
 
+            // -----------------------------------------------------------------
+            // Active Playback State Transitions (isPlaying true/false)
+            // -----------------------------------------------------------------
             if (typeof data.isPlaying === 'boolean') {
                 if (data.isPlaying) {
                     // Actively playing frames — disarm startup deadlock watchdog immediately
                     this._clearStartupWatchdog();
+                    this._isEnded = false;
                     if (this._isPaused) {
                         this._isPaused = false;
                         this.onEvent({ type: PlayerEvent.PLAYING });
                     }
-                } else if (!this._isPaused && !this._isBuffering) {
+                } else if (!this._isPaused && !this._isBuffering && !this._isEnded && data.state !== 'ended') {
+                    // Only transition to paused if media is not ended or actively buffering
+                    // When playback naturally completes, ExoPlayer sets isPlaying=false;
+                    // suppressing pause here prevents masking the ended state transition.
                     this._isPaused = true;
                     this.onEvent({ type: PlayerEvent.PAUSE });
                 }
@@ -386,11 +416,10 @@ export class ExoVideoPlayer {
             // Startup & Buffering Progress Guard
             // -----------------------------------------------------------------
             // Suppress dispatching timeupdate events to the higher layers (JellyfinPlayer)
-            // while the media pipeline is still buffering or has not presented frames.
-            // Dispatching premature time updates during initial resume seeks causes the
-            // loading screen to dismiss prematurely before the video frame renders.
+            // while the media pipeline is still buffering, has not presented frames,
+            // or has already completed playback naturally.
             // -----------------------------------------------------------------
-            if (!this._started || this._isBuffering) {
+            if (!this._started || this._isBuffering || this._isEnded) {
                 return;
             }
 
@@ -581,6 +610,7 @@ export class ExoVideoPlayer {
         this._currentSrc = options?.url;
         this._started = false;
         this._isPaused = false;
+        this._isEnded = false;
 
         // Notify UI that stream load has started
         this.onEvent({ type: PlayerEvent.LOAD_START });
@@ -698,6 +728,7 @@ export class ExoVideoPlayer {
     async unpause() {
         log.debug('ExoVideoPlayer.unpause()');
         this._isPaused = false;
+        this._isEnded = false;
         await invokeNative('play');
         this.onEvent({ type: PlayerEvent.PLAY });
         this.onEvent({ type: PlayerEvent.PLAYING });
@@ -713,6 +744,7 @@ export class ExoVideoPlayer {
         this._stopPollingLoop();
         this._started = false;
         this._isPaused = true;
+        this._isEnded = false;
 
         if (this._refreshRateMatched) {
             this._refreshRateMatched = false;
@@ -744,6 +776,7 @@ export class ExoVideoPlayer {
 
         log.info(`ExoVideoPlayer.seek to ${targetSeconds.toFixed(2)}s`);
         this._isSeeking = true;
+        this._isEnded = false;
         this.onEvent({ type: PlayerEvent.SEEK });
 
         // Invoke native seek on ExoPlayer
@@ -966,9 +999,9 @@ export class ExoVideoPlayer {
                     this._duration = durMs / 1000;
                 }
 
-                // Forward timeupdate only if playback has started, is not paused, and is not buffering
-                // This prevents the polling loop from falsely reporting active playback during initial seek buffer
-                if (posMs > 0 && !this._isPaused && !this._isBuffering && this._started) {
+                // Forward timeupdate only if playback has started, is not paused, is not buffering, and has not ended
+                // This prevents the polling loop from falsely reporting active playback during initial seek buffer or after completion
+                if (posMs > 0 && !this._isPaused && !this._isBuffering && !this._isEnded && this._started) {
                     this.onEvent({
                         type: PlayerEvent.TIME_UPDATE,
                         data: {

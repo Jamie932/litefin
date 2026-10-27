@@ -213,7 +213,11 @@ export const PlayerEvent = {
     PLAYING: 'playing',
     FULLSCREEN_CHANGE: 'fullscreenchange',
     STATE_CHANGE: 'statechange',
-    RESTARTING: 'restarting'
+    RESTARTING: 'restarting',
+    ENDED: 'ended',
+    CAN_PLAY: 'canplay',
+    LOAD_START: 'loadstart',
+    LOADED_METADATA: 'loadedmetadata'
 };
 
 // ============================================================================

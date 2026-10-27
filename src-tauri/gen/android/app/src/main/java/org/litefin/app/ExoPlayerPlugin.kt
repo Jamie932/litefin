@@ -400,9 +400,11 @@ class ExoPlayerPlugin(private val activity: Activity) : Plugin(activity) {
           else -> "unknown"
         }
 
+        // Convey playback lifecycle state alongside playWhenReady and active isPlaying state
         val payload = JSObject().apply {
           put("state", stateName)
           put("playWhenReady", newPlayer.playWhenReady)
+          put("isPlaying", newPlayer.isPlaying)
         }
 
         dispatchNativeEvent("exoplayer://playback-state", payload)
@@ -427,9 +429,19 @@ class ExoPlayerPlugin(private val activity: Activity) : Plugin(activity) {
       }
 
       override fun onIsPlayingChanged(isPlaying: Boolean) {
+        // Map underlying ExoPlayer state so frontend can distinguish user pauses from end-of-stream
+        val stateName = when (newPlayer.playbackState) {
+          Player.STATE_IDLE -> "idle"
+          Player.STATE_BUFFERING -> "buffering"
+          Player.STATE_READY -> "ready"
+          Player.STATE_ENDED -> "ended"
+          else -> "unknown"
+        }
+
         val payload = JSObject().apply {
           put("isPlaying", isPlaying)
           put("positionMs", newPlayer.currentPosition)
+          put("state", stateName)
         }
         dispatchNativeEvent("exoplayer://playback-state", payload)
 

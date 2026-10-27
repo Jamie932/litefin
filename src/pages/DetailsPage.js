@@ -852,6 +852,9 @@ class DetailsPage extends Page {
             // 3. Update active item reference in memory
             this._item = item;
 
+            // Reconcile with authoritative client state if server database commit is still in flight
+            this._reconcileItemWithLastStopped(this._item);
+
             // 4. Update series cache if applicable
             if (item.Type === 'Series') {
                 state.set(`details:series:${item.Id}`, item);
@@ -910,6 +913,36 @@ class DetailsPage extends Page {
         } catch (err) {
             // Availability is optional; playback and Jellyfin metadata remain usable.
             log.warn('Unable to load streaming availability', err);
+        }
+    }
+
+    /**
+     * Reconciles a media item's UserData against authoritative playback stop state.
+     * Prevents UI desynchronization on DetailsPage when the server database transaction
+     * is still processing or committing asynchronously right after the player exits.
+     *
+     * @param {Object} item - Media item with UserData
+     * @private
+     */
+    _reconcileItemWithLastStopped(item) {
+        if (!item) return;
+
+        // Retrieve last stopped snapshot from in-memory state
+        const lastStopped = state.get('playback:lastStopped');
+        if (!lastStopped || lastStopped.itemId !== item.Id) return;
+
+        // Only reconcile if stop was recent (within 30 seconds)
+        if (Date.now() - lastStopped.timestamp > 30000) return;
+
+        item.UserData = item.UserData || {};
+        if (lastStopped.isNearComplete) {
+            // Playback completed or crossed watched threshold
+            item.UserData.Played = true;
+            item.UserData.PlaybackPositionTicks = 0;
+            item.UserData.UnplayedItemCount = 0;
+        } else if (lastStopped.positionTicks > 0) {
+            // Partially watched: preserve exact resume position
+            item.UserData.PlaybackPositionTicks = lastStopped.positionTicks;
         }
     }
 
@@ -982,6 +1015,9 @@ class DetailsPage extends Page {
                 Fields: requestedFields.join(',')
             });
             this._item = item;
+
+            // Reconcile with authoritative client state if server database commit is still in flight
+            this._reconcileItemWithLastStopped(this._item);
 
             // Synchronize container layout class once item type is determined
             this._updateLayoutClasses();
@@ -3733,6 +3769,21 @@ class DetailsPage extends Page {
                 }
             }
 
+            // If the episode returned by the server as Next Up was just marked complete,
+            // suppress it from the Next Up display so the finished item does not linger.
+            const lastStopped = state.get('playback:lastStopped');
+            if (
+                this._nextUp &&
+                this._nextUp.length > 0 &&
+                lastStopped &&
+                lastStopped.isNearComplete &&
+                this._nextUp[0].Id === lastStopped.itemId &&
+                Date.now() - lastStopped.timestamp < 30000
+            ) {
+                log.info('Server NextUp returned recently completed episode — suppressing stale item');
+                this._nextUp = [];
+            }
+
             // Render next up if available and eligible for this view
             if (this._nextUp.length > 0) {
                 this._renderNextUp();
@@ -3919,6 +3970,14 @@ class DetailsPage extends Page {
         try {
             const response = await api.getEpisodes(seriesId, { SeasonId: seasonId });
             this._episodes = response.Items || [];
+
+            // Reconcile episodes list with authoritative client state
+            if (this._episodes.length > 0) {
+                for (const ep of this._episodes) {
+                    this._reconcileItemWithLastStopped(ep);
+                }
+            }
+
             state.set(cacheKey, this._episodes);
 
             if (this._episodes.length > 0) {
@@ -4528,6 +4587,13 @@ class DetailsPage extends Page {
             } catch (error) {
                 log.warn('Failed to load more from season', error);
                 return;
+            }
+        }
+
+        // Reconcile season episodes with authoritative client state
+        if (allItems && allItems.length > 0) {
+            for (const ep of allItems) {
+                this._reconcileItemWithLastStopped(ep);
             }
         }
 

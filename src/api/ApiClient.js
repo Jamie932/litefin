@@ -453,6 +453,11 @@ export class ApiClient {
             keepalive: options.keepalive
         };
 
+        // Forward cache mode if explicitly requested (e.g. 'no-cache')
+        if (options.cache) {
+            fetchOptions.cache = options.cache;
+        }
+
         // Add body for POST/PUT requests
         if (options.body !== undefined && options.body !== null) {
             if (options.body instanceof FormData) {

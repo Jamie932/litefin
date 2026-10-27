@@ -5496,6 +5496,11 @@ class PlayerPage extends Page {
                     this._reportPlaybackStopped(mediaSource, positionTicks, false, durationTicks)
                 ])
             );
+
+            // Allow the server-side SQLite write pipeline a brief settling window
+            // so subsequent metadata queries upon arrival at the destination screen
+            // read committed user data rather than old pre-stop rows.
+            await new Promise((resolve) => setTimeout(resolve, 150));
         } catch (error) {
             log.warn('Error during stop:', error);
         }
@@ -5516,14 +5521,36 @@ class PlayerPage extends Page {
         // Invalidate stale caches so pages reload fresh data after playback
         if (this._item) {
             try {
-                // Update cached played/progress state across library:state:* caches without deleting state
-                // so focus restoration and grid state are preserved when returning to library pages.
-                const itemId = this._item.Id;
-                const durationTicks =
-                    this._player?.getDurationTicks?.() || mediaSource?.RunTimeTicks || this._item?.RunTimeTicks || 0;
-                const isNearComplete =
-                    this._isPlaybackEnded || (durationTicks > 0 && positionTicks >= durationTicks * 0.9);
+                // Resolve user-configured watched threshold percentage fraction
+                const thresholdFraction = this._getWatchedThresholdFraction();
 
+                // Live television streams have rolling buffer durations and must not trigger completion
+                const isLive =
+                    this._item?.Type === 'TvChannel' ||
+                    Boolean(mediaSource?.LiveStreamId || mediaSource?.IsInfiniteStream);
+
+                // Determine whether playback completed naturally or crossed the user threshold
+                const isNearComplete =
+                    !isLive &&
+                    durationTicks > 0 &&
+                    (this._isPlaybackEnded || positionTicks >= durationTicks * thresholdFraction);
+
+                const itemId = this._item.Id;
+
+                // Persist authoritative client playback stop snapshot to in-memory state.
+                // This acts as a reliable source of truth during immediate page navigation
+                // in case the server database transaction is still committing.
+                state.set('playback:lastStopped', {
+                    itemId,
+                    seriesId: this._item.SeriesId || null,
+                    seasonId: this._item.SeasonId || null,
+                    positionTicks: isNearComplete ? 0 : positionTicks,
+                    durationTicks,
+                    isNearComplete,
+                    timestamp: Date.now()
+                });
+
+                // Update cached played and progress state across all library state caches
                 const allState = state.getAll();
                 for (const [key, val] of Object.entries(allState)) {
                     if (key.startsWith('library:state:') && val?.stateData?.items) {
@@ -5539,19 +5566,42 @@ class PlayerPage extends Page {
                             }
                         }
                     }
+
+                    // Also patch any in-memory episode caches so season listings reflect new progress
+                    if (key.startsWith('details:episodes:') && Array.isArray(val)) {
+                        const match = val.find((ep) => ep?.Id === itemId);
+                        if (match) {
+                            match.UserData = match.UserData || {};
+                            if (isNearComplete) {
+                                match.UserData.Played = true;
+                                match.UserData.PlaybackPositionTicks = 0;
+                            } else if (positionTicks > 0) {
+                                match.UserData.PlaybackPositionTicks = positionTicks;
+                            }
+                        }
+                    }
                 }
             } catch (cacheErr) {
                 log.warn('Failed to patch library state cache on stop:', cacheErr);
             }
 
+            // Invalidate HTTP ETag cache to guarantee next requests do not receive 304 Not Modified
             api.clearEtagCache();
 
-            // Invalidate home page's rendered row cache
+            // Invalidate home page's rendered row cache so returning to Home loads fresh rows
             state.delete('home:pageCache');
 
-            // Invalidate episode listing for the current series/season
-            if (this._item.Type === 'Episode' && this._item.SeriesId && this._item.SeasonId) {
-                state.delete(`details:episodes:${this._item.SeriesId}:${this._item.SeasonId}`);
+            // Invalidate all details data caches (series, season, episodes, and recommendations)
+            // while preserving UI focus restore memory and remote trailer auto-chain flags
+            const allKeys = Object.keys(state.getAll());
+            for (const key of allKeys) {
+                if (
+                    key.startsWith('details:') &&
+                    !key.startsWith('details:lastFocusedItem') &&
+                    key !== 'details:autoChainRemote'
+                ) {
+                    state.delete(key);
+                }
             }
         }
 

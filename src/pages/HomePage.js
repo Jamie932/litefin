@@ -783,6 +783,9 @@ class HomePage extends Page {
                                     return false;
                                 }
 
+                                // Reconcile against recent authoritative playback stop state
+                                this._reconcileItemPlaybackState(item);
+
                                 // Exclude items already marked as watched/played
                                 if (item.UserData?.Played) {
                                     return false;
@@ -848,6 +851,9 @@ class HomePage extends Page {
                                 return false;
                             }
 
+                            // Reconcile against recent authoritative playback stop state
+                            this._reconcileItemPlaybackState(item);
+
                             // Exclude items already marked as watched/played
                             if (item.UserData?.Played) {
                                 return false;
@@ -875,6 +881,12 @@ class HomePage extends Page {
                             // Defensive guard: Drop non-playable container folders (e.g. Season/Series)
                             if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder)
                                 return false;
+
+                            // Reconcile against recent authoritative playback stop state
+                            this._reconcileItemPlaybackState(item);
+
+                            // Drop items already watched or completed
+                            if (item.UserData?.Played) return false;
 
                             // Filter out next-up items that have already been partially played,
                             // as those are already accounted for in the continue watching row list.
@@ -993,6 +1005,9 @@ class HomePage extends Page {
                         // Drop invalid items and container folders
                         if (!item || item.IsFolder) return false;
 
+                        // Reconcile against recent authoritative playback stop state
+                        this._reconcileItemPlaybackState(item);
+
                         // Exclude items already marked as watched/played
                         if (item.UserData?.Played) return false;
 
@@ -1047,6 +1062,12 @@ class HomePage extends Page {
                     const filtered = res.Items.filter((item) => {
                         // Defensive guard: Drop non-playable container folders (e.g. Season/Series)
                         if (!item || item.Type === 'Season' || item.Type === 'Series' || item.IsFolder) return false;
+
+                        // Reconcile against recent authoritative playback stop state
+                        this._reconcileItemPlaybackState(item);
+
+                        // Drop items already watched or completed
+                        if (item.UserData?.Played) return false;
 
                         const position = item.UserData?.PlaybackPositionTicks || 0;
                         return position === 0;
@@ -3612,6 +3633,34 @@ class HomePage extends Page {
     }
 
     /**
+     * Reconciles an item's UserData against authoritative client playback state
+     * captured when the player stopped. Prevents read-after-write race conditions
+     * where the server's SQLite database has not finished committing the stop report.
+     *
+     * @param {Object} item - Media item with UserData
+     * @private
+     */
+    _reconcileItemPlaybackState(item) {
+        if (!item) return;
+
+        // Retrieve last stopped snapshot from in-memory state
+        const lastStopped = state.get('playback:lastStopped');
+        if (!lastStopped || lastStopped.itemId !== item.Id) return;
+
+        // Only reconcile if stop was recent (within 60 seconds)
+        if (Date.now() - lastStopped.timestamp > 60000) return;
+
+        item.UserData = item.UserData || {};
+        if (lastStopped.isNearComplete) {
+            item.UserData.Played = true;
+            item.UserData.PlaybackPositionTicks = 0;
+            item.UserData.UnplayedItemCount = 0;
+        } else if (lastStopped.positionTicks > 0) {
+            item.UserData.PlaybackPositionTicks = lastStopped.positionTicks;
+        }
+    }
+
+    /**
      * Saves the current homepage data to the state cache,
      * so that back-navigation renders instantly without network calls.
      * Hero carousel items are also persisted so the carousel can be
@@ -3620,6 +3669,14 @@ class HomePage extends Page {
     _savePageCache() {
         // Respect user preference
         if (storage.getItem('pref:homeScreenCache') === 'false') return;
+
+        // If playback stopped within the last few seconds, avoid storing transitional
+        // row data in the 24-hour page cache before the server fully settles.
+        const lastStopped = state.get('playback:lastStopped');
+        if (lastStopped && Date.now() - lastStopped.timestamp < 4000) {
+            log.info('Skipping _savePageCache immediately after playback stop');
+            return;
+        }
 
         const rows = {};
         for (const [id, entry] of this._rowRegistry) {

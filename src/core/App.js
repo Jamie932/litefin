@@ -1040,8 +1040,10 @@ class App {
         //      (Android TV Play Next / Channels & Mobile Launcher Shortcuts).
         //      Must run after auth.init() so the managers can read the restored auth
         //      state and start their refresh cycles immediately.
+        //      A Smart Hub tile launch is resolved before the router starts (max 3 s),
+        //      so the default route can open the tile's page instead of /home.
         if (platformInfo.isTizen) {
-            smartHubManager.init();
+            await smartHubManager.init();
         } else if (platformInfo.isAndroid) {
             androidLauncherManager.init();
         }
@@ -2090,6 +2092,9 @@ class App {
                     );
                     router.navigate('/profiles', { replace: true });
                 } else if (isAuthenticated) {
+                    // Launched from a Smart Hub tile: open its page instead (Back leads to /home)
+                    if (smartHubManager.openStartupTarget()) return;
+
                     // Single user, no PIN, rememberLastUser active, or skipped once — skip the profiles screen and go straight home
                     log.info('Initial route: Authenticated, navigating to HomePage');
                     router.navigate('/home', { replace: true });

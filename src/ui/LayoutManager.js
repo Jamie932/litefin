@@ -918,6 +918,22 @@ class LayoutManager {
             --jf-button-border-focus: ${focusBorderColor};
             --jf-focus-border-color: ${accents.accent};`;
 
+        // 1.25. Set Semantic Button & Control Defaults per Theme Mode
+        // Ensures that CssVarsPolyfill captures the active mode's exact button and control styling.
+        const isLightMode = this._themeMode === THEME_MODES.CLASSIC_LIGHT || this._themeMode === THEME_MODES.FROST || this._themeMode === THEME_MODES.PAPER || this._themeMode === THEME_MODES.TINTED_LIGHT;
+        const buttonBg = isLightMode ? (this._themeMode === THEME_MODES.FROST ? 'rgba(27, 44, 56, 0.09)' : this._themeMode === THEME_MODES.PAPER ? 'rgba(51, 42, 31, 0.07)' : '#eeeeee') : (this._themeMode === THEME_MODES.BLACK ? '#222222' : 'rgba(255, 255, 255, 0.10)');
+        const buttonHover = isLightMode ? (this._themeMode === THEME_MODES.FROST ? 'rgba(27, 44, 56, 0.16)' : this._themeMode === THEME_MODES.PAPER ? 'rgba(51, 42, 31, 0.14)' : '#e0e0e0') : (this._themeMode === THEME_MODES.BLACK ? '#2a2a2a' : 'rgba(255, 255, 255, 0.20)');
+        const inputBg = isLightMode ? (this._themeMode === THEME_MODES.FROST ? 'rgba(27, 44, 56, 0.06)' : this._themeMode === THEME_MODES.PAPER ? 'rgba(51, 42, 31, 0.05)' : '#f0f0f0') : (this._themeMode === THEME_MODES.BLACK ? '#181818' : 'rgba(255, 255, 255, 0.08)');
+        const inputBorder = isLightMode ? (this._themeMode === THEME_MODES.FROST ? 'rgba(27, 44, 56, 0.16)' : this._themeMode === THEME_MODES.PAPER ? 'rgba(51, 42, 31, 0.16)' : '#dddddd') : (this._themeMode === THEME_MODES.BLACK ? '#222222' : 'rgba(255, 255, 255, 0.15)');
+        const errorColor = isLightMode ? (this._themeMode === THEME_MODES.FROST ? '#e25746' : this._themeMode === THEME_MODES.PAPER ? '#bf5040' : '#d32f2f') : '#f44336';
+
+        dynamicCss += `
+            --jf-button-bg: ${buttonBg};
+            --jf-button-hover: ${buttonHover};
+            --jf-input-bg: ${inputBg};
+            --jf-input-border: ${inputBorder};
+            --jf-error: ${errorColor};`;
+
         // 1.5. Set Text Colors (Ensures ultra-legacy build always has stable text vars)
         if (this._themeMode === THEME_MODES.TINTED_LIGHT) {
             /*

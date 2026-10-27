@@ -64,6 +64,26 @@
     --jf-text-secondary: rgba(255, 255, 255, 0.8);
     --jf-text-tertiary: #666666;
 
+    /* Global Button & Control Semantic Defaults (Crucial for ultra-legacy ponyfill) */
+    --jf-button-bg: rgba(255, 255, 255, 0.12);
+    --jf-button-hover: rgba(255, 255, 255, 0.22);
+    --jf-button-border-focus: #ffffff;
+    --jf-input-bg: rgba(255, 255, 255, 0.08);
+    --jf-input-border: rgba(255, 255, 255, 0.18);
+    --jf-switch-bg: rgba(255, 255, 255, 0.20);
+    --jf-switch-handle: #ffffff;
+
+    /* Semantic Status & Feedback Colors */
+    --jf-error: #f44336;
+    --jf-success: #4caf50;
+    --jf-warning: #ff9800;
+    --jf-info: #2196f3;
+
+    /* Structural Surface Borders & Dividers */
+    --jf-border: rgba(255, 255, 255, 0.15);
+    --jf-border-light: rgba(255, 255, 255, 0.08);
+    --jf-divider: rgba(255, 255, 255, 0.08);
+
     /* Legacy Aliases (Compatibility for untracked CSS files) */
     --text-primary: var(--jf-text-primary);
     --text-secondary: var(--jf-text-secondary);

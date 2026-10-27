@@ -55,18 +55,18 @@
 
 
 .btn-secondary {
-    background: var(--jf-button-bg);
-    color: var(--jf-text-primary);
+    background: var(--jf-button-bg, rgba(255, 255, 255, 0.12));
+    color: var(--jf-text-primary, #ffffff);
 }
 
 .btn-secondary:focus,
 .btn-secondary.focused,
 .btn-secondary:hover {
-    background: var(--jf-button-hover);
+    background: var(--jf-button-hover, rgba(255, 255, 255, 0.22));
 }
 
 .btn-danger {
-    background: var(--jf-error);
+    background: var(--jf-error, #f44336);
     color: white;
 }
 
@@ -76,10 +76,10 @@
 }
 
 .nav-btn {
-    background: var(--jf-button-bg);
+    background: var(--jf-button-bg, rgba(255, 255, 255, 0.12));
     border: 3px solid transparent;
     background-clip: padding-box;
-    color: var(--jf-text-primary);
+    color: var(--jf-text-primary, #ffffff);
     display: flex;
     align-items: center;
     padding: 10px 20px;

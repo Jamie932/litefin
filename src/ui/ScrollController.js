@@ -44,7 +44,9 @@ import {
     GLIDE_ZONE_MAX_PX,
     GLIDE_FALLBACK_SPEED_PX_MS,
     GLIDE_ENTRY_SPEED_CAP_PX_MS,
-    GLIDE_MIN_DURATION_MS
+    GLIDE_MIN_DURATION_MS,
+    NOMINAL_FRAME_MS,
+    stableFrameDelta
 } from './SpringPhysics.js';
 
 // ============================================================================
@@ -1281,19 +1283,23 @@ class ScrollController {
                 this._recordFrameDelta(rawDelta);
             }
 
-            // Clamp frame deltas (tab stalls) but keep global elapsed real.
-            let dt = Math.min(rawDelta, 64);
+            // FIXED CADENCE STEP: integrate the same dt every frame — the
+            // clamped median of recent measured intervals. Consuming each
+            // frame's actual interval produced wild per-paint steps on janky
+            // delivery (fast frames = small steps, late frames = teleports),
+            // the source of the "scroll splits into two uneven parts" hitch,
+            // worst at long duration settings where late frames are frequent.
+            // Constant dt paints equal steps; late frames only paint earlier
+            // state, and slow panels stretch the animation proportionally.
+            let dt = stableFrameDelta(this._frameSamples, NOMINAL_FRAME_MS);
 
             // Settle budget accumulates INTEGRATED simulation time, not wall
-            // clock (identical accounting to TouchHorizontalScroller). On slow
-            // CPU / low-fps devices each rAF frame advances at most 64ms of
-            // simulated time, so simulation falls behind wall time. Timing the
-            // SPRING_MAX_DURATION_MS hard timeout on wall clock fired the
-            // finalize() snap while the physics was still tens of pixels short
-            // of the target — the visible post-scroll "nudge" (20-30px jump) on
-            // slow Tizen hardware. Re-anchoring after a retarget restarts the
-            // budget (retarget resets elapsed), preserving the original
-            // "fresh settle budget" intent.
+            // clock (identical accounting to TouchHorizontalScroller). Timing
+            // the SPRING_MAX_DURATION_MS hard timeout on wall clock fired the
+            // finalize() snap while the physics was still tens of pixels
+            // short of the target — the visible post-scroll "nudge" (20-30px
+            // jump) on slow Tizen hardware. Retarget re-anchoring restarts
+            // the budget, preserving the original "fresh settle budget" intent.
             s.elapsed += dt;
 
             if (s.glide) {

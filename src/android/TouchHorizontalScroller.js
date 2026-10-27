@@ -43,6 +43,8 @@ import {
     SPRING_SETTLE_DISTANCE_PX,
     SPRING_SETTLE_VELOCITY_PX_MS,
     SPRING_MAX_DURATION_MS,
+    NOMINAL_FRAME_MS,
+    stableFrameDelta,
     CHASE_TAU_FACTOR,
     RAIL_DECEL_ZONE_FRACTION,
     FLING_VELOCITY_MULTIPLIER,
@@ -523,6 +525,7 @@ export class TouchHorizontalScroller {
             v: 0,
             elapsed: 0,
             lastFrameTime: null,
+            samples: [],
             raf: 0,
             write
         };
@@ -586,8 +589,14 @@ export class TouchHorizontalScroller {
             if (state.lastFrameTime === null) {
                 state.lastFrameTime = now;
             }
-            let dt = Math.min(now - state.lastFrameTime, 64);
+            // FIXED CADENCE STEP (matches ScrollController): every paint
+            // advances the same simulated time, so deliveries with late
+            // frames do not dent or teleport mid-sweep.
+            const rawDelta = now - state.lastFrameTime;
             state.lastFrameTime = now;
+            state.samples.push(rawDelta);
+            if (state.samples.length > 16) state.samples.shift();
+            let dt = stableFrameDelta(state.samples, NOMINAL_FRAME_MS);
             state.elapsed += dt;
 
             while (dt > 0) {

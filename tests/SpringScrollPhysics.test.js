@@ -667,3 +667,101 @@ test('ScrollController: terminal glide closes the last stretch at perceptible sp
         scrollController._verticalScrollAnimationId = null;
     }
 });
+
+/**
+ * ============================================================================
+ * Fixed-cadence integration — janky frame delivery must not dent the motion
+ * ============================================================================
+ * Consuming each rAF frame's actual interval made per-paint steps fluctuate
+ * wildly on janky TV delivery (fast frames = small steps, late frames =
+ * teleports + sag), which read as the scroll splitting into an uneven
+ * "two parts" hitch — worst with long duration settings, where late frames
+ * were frequent. The loop now integrates a constant clamped median cadence
+ * so every paint advances an equal step.
+ */
+test('ScrollController: late/uneven rAF frames paint equal steps with no mid-flight dents', () => {
+    const pending = [];
+    const realRaf = globalThis.requestAnimationFrame;
+    try {
+        globalThis.requestAnimationFrame = (cb) => {
+            pending.push(cb);
+            return pending.length;
+        };
+
+        const controller = new ScrollController();
+        const writes = [];
+        const container = {
+            style: {},
+            get scrollTop() {
+                return writes.length ? writes[writes.length - 1] : 0;
+            },
+            set scrollTop(v) {
+                writes.push(v);
+            },
+            get scrollLeft() {
+                return 0;
+            },
+            set scrollLeft(v) {
+                void v;
+            }
+        };
+
+        controller._springScrollTo({
+            stateKey: '_verticalScrollState',
+            animIdKey: '_verticalScrollAnimationId',
+            container,
+            track: null,
+            currentScroll: 0,
+            targetScroll: 342,
+            duration: 240,
+            isVertical: true,
+            scrollMode: 'native'
+        });
+
+        // Janky delivery: alternates good frames with 90-100ms late frames
+        // (still under ADAPTIVE_SAMPLE_REJECT_MAX_MS and CADENCE_DT_MAX_MS so
+        // the median clamps to a stable step).
+        const cadence = [16, 100, 16, 90, 16, 100, 33, 16, 90, 16];
+        let t = 0;
+        let idx = 0;
+        let guard = 0;
+        while (controller._verticalScrollState !== null && guard < 120) {
+            const cb = pending.shift();
+            if (!cb) break;
+            cb(t);
+            t += cadence[idx % cadence.length];
+            idx++;
+            guard++;
+        }
+        assert.ok(guard < 120, 'the animation must settle on its own');
+        assert.strictEqual(writes[writes.length - 1], 342, 'must land exactly on target');
+
+        // No teleport: the largest single-paint step after the first 3 warmup
+        // frames is bounded relative to the step that followed it (a consumed
+        // 100ms interval previously teleported 5-10x the neighboring step).
+        const steps = writes.slice(3).map((w, i, a) => +Math.abs(w - (a[i - 1] ?? writes[2])).toFixed(1));
+        for (let i = 1; i < steps.length; i++) {
+            const ratio = Math.abs(steps[i] - steps[i - 1]) / Math.max(steps[i], steps[i - 1], 0.01);
+            if (steps[i] > 3 && steps[i - 1] > 3) {
+                assert.ok(
+                    steps[i] / Math.max(steps[i - 1], 0.01) < 4,
+                    `adjacent paint steps must stay in the same magnitude band (saw ${steps[i - 1]} -> ${steps[i]})`
+                );
+            }
+            void ratio;
+        }
+
+        // No creep either (constant steps must not degrade into sub-pixel tails)
+        let creep = 0;
+        for (let i = 4; i < writes.length - 2; i++) {
+            const step = Math.abs(writes[i] - writes[i - 1]);
+            const rem = Math.abs(342 - writes[i]);
+            if (step < 1 && rem > 3) creep++;
+        }
+        assert.ok(creep === 0, `no sub-pixel creep on late frames (saw ${creep} steps)`);
+    } finally {
+        globalThis.requestAnimationFrame = realRaf;
+        scrollController._verticalScrollState = null;
+        scrollController._verticalScrollAnimationId = null;
+    }
+});

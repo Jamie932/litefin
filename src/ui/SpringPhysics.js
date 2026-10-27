@@ -140,6 +140,41 @@ export const GLIDE_ENTRY_SPEED_CAP_PX_MS = 2;
 export const GLIDE_MIN_DURATION_MS = 110;
 
 /**
+ * Fixed integration cadence. The loop integrates the SAME dt every frame —
+ * derived from the panel's median measured frame interval (clamped between
+ * a 60fps nominal and a stability ceiling) — instead of consuming whatever
+ * late/early interval the current frame happened to have.
+ *
+ * Why: on janky TV delivery (frame intervals 16-130ms under decode load)
+ * consuming real intervals makes the per-paint step fluctuate wildly —
+ * motion speeds up on fast frames and teleports+sags on late ones, which
+ * reads as the scroll splitting into an uneven "two parts" hitch. A constant
+ * dt paints equal steps per frame; late frames simply paint earlier steps
+ * with no dent, and the animation stretches proportionally on slow panels.
+ */
+export const NOMINAL_FRAME_MS = 1000 / 60;
+export const CADENCE_DT_MAX_MS = 64;
+
+/**
+ * Fills in a stable per-frame integration step from recent raw rAF
+ * intervals: median of the valid entries, clamped to [NOMINAL_FRAME_MS,
+ * CADENCE_DT_MAX_MS]. Falls back to `fallbackMs` until 3 valid samples
+ * have accumulated.
+ *
+ * @param {number[]} samples - Raw rAF intervals, ms (zeros/undefined skipped)
+ * @param {number} fallbackMs - Step used before enough samples exist
+ * @returns {number} Integration dt for this frame
+ */
+export function stableFrameDelta(samples, fallbackMs) {
+    const valid = (samples || []).filter((d) => d > 0 && d < 4000);
+    if (valid.length < 3) {
+        return Math.min(Math.max(fallbackMs, NOMINAL_FRAME_MS), CADENCE_DT_MAX_MS);
+    }
+    valid.sort((a, b) => a - b);
+    return Math.min(Math.max(valid[Math.floor(valid.length / 2)], NOMINAL_FRAME_MS), CADENCE_DT_MAX_MS);
+}
+
+/**
  * Absolute animation timeout (ms). Safety net for pathological retarget
  * storms and tiny residual demands that technically equal the thresholds.
  *

@@ -114,12 +114,83 @@ class I18nManager {
     }
 
     /**
+     * Resolves the canonical localization keys array.
+     * Uses compile-time injected __I18N_KEYS__ when built via Webpack,
+     * or lazily fetches _keys.json as a fallback.
+     *
+     * @returns {Promise<string[]>} Array of canonical dictionary keys
+     */
+    async _getKeys() {
+        // Return compile-time embedded keys if defined (zero network latency)
+        if (typeof __I18N_KEYS__ !== 'undefined' && Array.isArray(__I18N_KEYS__)) {
+            return __I18N_KEYS__;
+        }
+
+        // Return cached keys if previously loaded
+        if (this._keys) {
+            return this._keys;
+        }
+
+        // Fallback: fetch _keys.json via XHR if running in an external bundle
+        try {
+            const url = this._localeUrl('_keys');
+            const data = await this._loadJson(url);
+            if (Array.isArray(data)) {
+                this._keys = data;
+                return this._keys;
+            }
+        } catch (err) {
+            log.warn('Could not load _keys.json fallback', err);
+        }
+
+        return [];
+    }
+
+    /**
+     * Hydrates loaded translation data into an in-memory key-value dictionary.
+     * Supports both compiled keyless value arrays and raw key-value JSON objects.
+     *
+     * @param {Object|Array} data - Raw parsed JSON data from locale file
+     * @param {string[]} keys - Canonical keys array
+     * @returns {Object<string, string>} Hydrated key-value dictionary
+     */
+    _hydrateDictionary(data, keys = []) {
+        // Guard against null or invalid input
+        if (!data) {
+            return {};
+        }
+
+        // If data is already a key-value object (dev mode or unit tests), return as-is
+        if (!Array.isArray(data)) {
+            return data;
+        }
+
+        const dict = {};
+        const count = Math.min(keys.length, data.length);
+
+        // Fast hydration loop - maps array indices back to canonical dictionary keys
+        for (let i = 0; i < count; i++) {
+            const val = data[i];
+
+            // Only populate non-empty values; empty strings fall back to English dictionary
+            if (val !== '' && val !== null && val !== undefined) {
+                dict[keys[i]] = val;
+            }
+        }
+
+        return dict;
+    }
+
+    /**
      * Initializes the language manager.
      * @param {string} langCode - Language ('en-us', 'es', etc.)
      */
     async init(langCode = 'en') {
         this.currentLang = langCode;
         this.isRTL = langCode === 'ar' || langCode === 'he' || langCode === 'fa';
+
+        // Resolve canonical keys schema for array hydration
+        const keys = await this._getKeys();
 
         const url = this._localeUrl(this.currentLang);
         log.info(`Initializing with lang: ${this.currentLang}`);
@@ -128,7 +199,7 @@ class I18nManager {
         try {
             // Use XHR instead of fetch() — works on both Tizen and WebOS file:// contexts
             const data = await this._loadJson(url);
-            this.dictionary = data;
+            this.dictionary = this._hydrateDictionary(data, keys);
 
             const keyCount = Object.keys(this.dictionary).length;
             log.info(`Successfully loaded ${keyCount} keys for ${this.currentLang}`);
@@ -153,7 +224,7 @@ class I18nManager {
             try {
                 const fallbackUrl = this._localeUrl(this.fallbackLang);
                 const data = await this._loadJson(fallbackUrl);
-                this.fallbackDictionary = data;
+                this.fallbackDictionary = this._hydrateDictionary(data, keys);
                 log.info(
                     `Successfully loaded ${Object.keys(this.fallbackDictionary).length} keys for fallback (${this.fallbackLang})`
                 );

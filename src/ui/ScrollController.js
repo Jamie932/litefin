@@ -43,9 +43,9 @@ import {
     GLIDE_ZONE_FRACTION,
     GLIDE_ZONE_MAX_PX,
     GLIDE_FALLBACK_SPEED_PX_MS,
-    GLIDE_ENTRY_SPEED_CAP_PX_MS,
     GLIDE_MIN_DURATION_MS,
     NOMINAL_FRAME_MS,
+    CADENCE_DT_MAX_MS,
     stableFrameDelta
 } from './SpringPhysics.js';
 
@@ -1189,6 +1189,7 @@ class ScrollController {
             startTime: null,
             lastFrameTime: null,
             elapsed: 0,
+            dt: null,
             glide: null,
             glideZone,
             _write,
@@ -1291,7 +1292,13 @@ class ScrollController {
             // worst at long duration settings where late frames are frequent.
             // Constant dt paints equal steps; late frames only paint earlier
             // state, and slow panels stretch the animation proportionally.
-            let dt = stableFrameDelta(this._frameSamples, NOMINAL_FRAME_MS);
+            // The state's live dt drifts toward the median instead of hopping
+            // to it, so the cadence can never step mid-animation.
+            const cadence = stableFrameDelta(this._frameSamples, NOMINAL_FRAME_MS);
+            if (s.dt === null) s.dt = cadence;
+            const maxShift = CADENCE_DT_MAX_MS / 16; // ≤4ms per frame drift
+            s.dt = Math.min(Math.max(cadence, s.dt - maxShift), s.dt + maxShift);
+            let dt = s.dt;
 
             // Settle budget accumulates INTEGRATED simulation time, not wall
             // clock (identical accounting to TouchHorizontalScroller). Timing
@@ -1303,19 +1310,25 @@ class ScrollController {
             s.elapsed += dt;
 
             if (s.glide) {
-                // TERMINAL GLIDE: constant-deceleration ease-out quadratic to
-                // the target. Exponential tails fall below ~1px/frame for the
-                // last third of a hop — motion appears to stop, then creeps
-                // the remainder (perceived 2-part hitch on slow panels). The
-                // glide keeps visible speed from vEntry down to 0 exactly at
-                // the target within 2·rem/v of sim time.
-                const f = Math.min((s.elapsed - s.glide.start) / s.glide.dur, 1);
-                const eased = 1 - (1 - f) * (1 - f);
-                s.x = s.glide.x0 + (s.target - s.glide.x0) * eased;
-                // Snap bittersweet settle criterion while gliding is disabled —
-                // only the landing (f=1) or the timeout may end the state.
+                // TERMINAL GLIDE: monotone cubic-Hermite close to the target.
+                // Exponential tails fall below ~1px/frame for the last third
+                // of a hop — motion appears to stop, then creeps the remainder
+                // (perceived 2-part hitch on slow panels). The glide honors
+                // the exact entry velocity (alpha = vEntry·T/R ≤ 3) so the
+                // handover has zero speed jump, keeps the average closing
+                // speed perceptible, and lands exactly on target.
+                const s2 = s.glide;
+                const u = Math.min((s.elapsed - s2.start) / s2.dur, 1);
+                // Cubic Hermite shape parameterized by alpha = vEntry·T/R:
+                // alpha==2 is the classic constant-decel ease-out; alpha<2
+                // (slow entry) preserves exact entry velocity and eases out;
+                // alpha up to 3 stays monotone. Velocity-continuous in every
+                // case — no handover speed jump mid-animation.
+                const al = s2.alpha;
+                const shape = al * u + (3 - 2 * al) * u * u + (al - 2) * u * u * u;
+                s.x = s2.x0 + s2.R * shape;
                 s._write(s.x);
-                if (f >= 1 || s.elapsed >= SPRING_MAX_DURATION_MS) {
+                if (u >= 1 || s.elapsed >= SPRING_MAX_DURATION_MS) {
                     s._finalize(s.target);
                     this[animIdKey] = null;
                     this[stateKey] = null;
@@ -1339,15 +1352,24 @@ class ScrollController {
             // still moving toward the target → replace the exponential tail.
             const remaining = Math.abs(s.target - s.x);
             if (remaining > 0 && remaining <= s.glideZone && !s.glide) {
-                const vEntry = Math.abs(s.v);
-                // Soft entry: clamp the starting speed into [2·floor, cap] so
-                // the handover never reads as a jerk, then bound the glide
-                // duration between a multi-frame minimum and the longest that
-                // still keeps the average closing speed perceptible.
-                const vStart = Math.min(Math.max(vEntry, 2 * GLIDE_FALLBACK_SPEED_PX_MS), GLIDE_ENTRY_SPEED_CAP_PX_MS);
-                const durRaw = (2 * remaining) / vStart;
-                const dur = Math.min(Math.max(durRaw, GLIDE_MIN_DURATION_MS), remaining / GLIDE_FALLBACK_SPEED_PX_MS);
-                s.glide = { x0: s.x, dur, start: s.elapsed };
+                const vEntry = Math.abs(s.v) || GLIDE_FALLBACK_SPEED_PX_MS;
+                // Duration bounds: never below a small multi-frame floor for
+                // fast entries, never slower than the perceptible-average
+                // closing speed (rem / floor). The monotone cubic below
+                // honors alpha = vEntry·dur/remaining, which preserves the
+                // EXACT entry velocity — no handover speed jump.
+                const dur = Math.min(
+                    Math.max((2 * remaining) / vEntry, GLIDE_MIN_DURATION_MS),
+                    (3 * remaining) / vEntry
+                );
+                s.glide = {
+                    x0: s.x,
+                    // signed remaining keeps the closing direction implicit
+                    R: s.target - s.x,
+                    alpha: Math.min((vEntry * dur) / remaining, 3),
+                    start: s.elapsed,
+                    dur
+                };
             }
 
             const settled = this._isPhysicsSettled(s);

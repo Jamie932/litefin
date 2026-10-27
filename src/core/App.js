@@ -15,7 +15,10 @@ import { auth } from '../api/index.js';
 import { webSocketHandler } from '../api/WebSocketHandler.js';
 import { tizenAdapter } from '../tizen/TizenAdapter.js';
 import { webosAdapter } from '../webos/WebOSAdapter.js';
-import { androidAdapter } from '../android/AndroidAdapter.js';
+// NOTE: AndroidAdapter is NOT statically imported in the boot graph - it is
+// Android-only code (Media3 bridge, back-button key handling, MediaSession),
+// so it is loaded on demand inside the platform dispatch below. TV tiers
+// never pay its parse cost.
 import { desktopAdapter } from '../desktop/DesktopAdapter.js';
 import { webAdapter } from '../web/WebAdapter.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
@@ -951,7 +954,11 @@ class App {
         } else if (platformInfo.isWebOS) {
             webosAdapter.init();
         } else if (platformInfo.isAndroid) {
-            androidAdapter.init();
+            // Android adapter is loaded on demand here - see the module note
+            // at the top of this file.
+            import('../android/AndroidAdapter.js')
+                .then(({ androidAdapter }) => androidAdapter.init())
+                .catch((err) => log.warn('AndroidAdapter init failed:', err));
         } else if (platformInfo.isDesktop) {
             desktopAdapter.init();
         } else {
@@ -1610,7 +1617,9 @@ class App {
                 } else if (platformInfo.isWebOS) {
                     webosAdapter.exit();
                 } else if (platformInfo.isAndroid) {
-                    androidAdapter.exit();
+                    import('../android/AndroidAdapter.js')
+                        .then(({ androidAdapter }) => androidAdapter.exit())
+                        .catch((err) => log.warn('AndroidAdapter exit failed:', err));
                 } else if (platformInfo.isDesktop) {
                     desktopAdapter.exit();
                 } else {

@@ -30,7 +30,6 @@ import { imageService } from '../utils/ImageService.js';
 import { pinManager } from '../utils/PinManager.js';
 import { pinDialog } from '../ui/PinDialog.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
-import { androidAdapter } from '../android/AndroidAdapter.js';
 import { customHeadersDialog } from '../ui/CustomHeadersDialog.js';
 import { customHeaders } from '../utils/CustomHeaders.js';
 
@@ -1468,7 +1467,10 @@ class LoginPage extends Page {
             } else if (platformInfo.isAndroid) {
                 // Ask the native shell to finish the activity (Back on the
                 // server screen with nothing behind it means "leave the app").
-                androidAdapter.exit();
+                // AndroidAdapter is lazily imported - Android-only module.
+                import('../android/AndroidAdapter.js')
+                    .then(({ androidAdapter }) => androidAdapter.exit())
+                    .catch(() => {});
                 return true;
             } else {
                 eventBus.emit('app:exitRequested');

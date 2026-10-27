@@ -31,7 +31,6 @@ import { state } from '../core/StateManager.js';
 import { api, ServerUnreachableError, sendWakeOnLan } from './ApiClient.js';
 import { tizenAdapter } from '../tizen/TizenAdapter.js';
 import { webosAdapter } from '../webos/WebOSAdapter.js';
-import { androidAdapter } from '../android/AndroidAdapter.js';
 import { desktopAdapter } from '../desktop/DesktopAdapter.js';
 import { webAdapter } from '../web/WebAdapter.js';
 import { platformInfo } from '../utils/PlatformInfo.js';
@@ -152,7 +151,7 @@ class AuthManager {
         log.info('Initializing...');
 
         // Ensure a unique device ID is registered with the API
-        this._ensureDeviceId();
+        await this._ensureDeviceId();
 
         // One-time migration: lift flat sessions array → per-server keyed map
         this._migrateServerSessions();
@@ -172,7 +171,7 @@ class AuthManager {
      * Ensure we have a unique device ID registered with ApiClient.
      * @private
      */
-    _ensureDeviceId() {
+    async _ensureDeviceId() {
         let deviceId = storage.getItem(STORAGE_KEYS.DEVICE_ID);
 
         if (!deviceId) {
@@ -182,13 +181,19 @@ class AuthManager {
             log.info('Generated new device ID');
         }
 
+        // NOTE: AndroidAdapter is lazily imported inside the platform dispatch
+        // below - it is Android-only code that does not belong in the boot
+        // bundle parsed by TV tiers.
+
         // Resolve device name from the corresponding platform adapter
         let deviceName;
         if (platformInfo.isWebOS) {
             // LG webOS TV device name (e.g., "LG OLED55...")
             deviceName = webosAdapter.getDeviceName();
         } else if (platformInfo.isAndroid) {
-            // Android / Fire TV device model name
+            // Android / Fire TV device model name — adapter is loaded on
+            // demand so TV tiers never parse the Android-only module.
+            const { androidAdapter } = await import('../android/AndroidAdapter.js');
             deviceName = androidAdapter.getDeviceName();
         } else if (platformInfo.isDesktop) {
             // Desktop Tauri client (e.g., "Litefin Desktop (Windows)")

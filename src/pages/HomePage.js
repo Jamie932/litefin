@@ -1302,7 +1302,15 @@ class HomePage extends Page {
             // ─── Step 4: Batch pre-fetch latest library rows via plugin ──────────
             // Pre-loads all latest rows across libraries in one round-trip.
             // Executed early so network latency overlaps with initial setup.
-            await this._preFetchLatestRows(descriptors);
+            //
+            // If the homepage was restored from in-memory cache, all descriptors
+            // already have their items populated via _applyCachedRowData().
+            // Bypassing this network request during cache restoration ensures that
+            // returning to the home screen is instantaneous and never stalled by
+            // server delays, socket saturation, or network timeouts.
+            if (!cache) {
+                await this._preFetchLatestRows(descriptors);
+            }
 
             // ─── Step 5: Partition eager vs deferred rows in natural user order ─
             // The `descriptors` array is already ordered by homeLayoutManager.applyLayout()

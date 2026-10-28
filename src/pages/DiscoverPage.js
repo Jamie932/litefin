@@ -168,15 +168,6 @@ class DiscoverPage extends Page {
 
         i18n.translateDOM(this.el);
 
-        // Verify that the server-side Seerr integration is available before fetching
-        const status = await seerr.status(true);
-        if (!status.available) {
-            this.setLoading(false);
-            this._showMessage(i18n.t('SeerrNotConfigured'), true);
-            this.markReady();
-            return;
-        }
-
         // Attach event delegation for clicks and focus tracking on cards
         this._attachDelegatedListeners();
 
@@ -204,6 +195,16 @@ class DiscoverPage extends Page {
                 }
             }
         } else {
+            // Verify that the server-side Seerr integration is available before fetching fresh data.
+            // Use cached session status so routine navigation never stalls on an upstream probe.
+            const status = await seerr.status();
+            if (!status.available) {
+                this.setLoading(false);
+                this._showMessage(i18n.t('SeerrNotConfigured'), true);
+                this.markReady();
+                return;
+            }
+
             // Load the initial prioritized batch of rows (extended if target row is requested)
             await this._loadInitialRows(targetRowKey);
         }

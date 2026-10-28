@@ -481,7 +481,7 @@ export class ApiClient {
             // environments where the Fetch specification disallowed signals on keepalive.
             const timeout = options.timeout || (options.keepalive ? 0 : REQUEST_TIMEOUT);
             const controller = new AbortController();
-            const timeoutId = timeout ? setTimeout(() => controller.abort(), timeout) : null;
+            let timeoutId = null;
             if (timeout) {
                 fetchOptions.signal = controller.signal;
             }
@@ -489,29 +489,54 @@ export class ApiClient {
             log.debug(`Fetching ${url} (timeout: ${timeout || 'none'}ms)...`);
             let response;
             try {
-                response = await fetch(url, fetchOptions);
-            } catch (fetchErr) {
-                /*
-                 * On Smart TVs and legacy web runtimes (such as Tizen 5.5 running Chromium 69),
-                 * cross-origin fetch calls with keepalive:true and non-simple headers (like Authorization
-                 * or Content-Type: application/json) trigger an immediate 'TypeError: Failed to fetch'
-                 * due to lack of CORS preflight support for keepalive in older browser engines.
-                 * If keepalive was active and threw a TypeError, fall back to a standard fetch without keepalive.
-                 */
-                if (fetchOptions.keepalive && fetchErr instanceof TypeError) {
-                    log.warn(`Fetch with keepalive failed (${fetchErr.message}); retrying without keepalive...`);
-                    delete fetchOptions.keepalive;
-                    if (!fetchOptions.signal && REQUEST_TIMEOUT) {
-                        const fallbackController = new AbortController();
-                        setTimeout(() => fallbackController.abort(), REQUEST_TIMEOUT);
-                        fetchOptions.signal = fallbackController.signal;
+                // Execute fetch with an optional fallback retry for legacy keepalive CORS issues
+                const executeFetch = async () => {
+                    try {
+                        return await fetch(url, fetchOptions);
+                    } catch (fetchErr) {
+                        /*
+                         * On Smart TVs and legacy web runtimes (such as Tizen 5.5 running Chromium 69),
+                         * cross-origin fetch calls with keepalive:true and non-simple headers (like Authorization
+                         * or Content-Type: application/json) trigger an immediate 'TypeError: Failed to fetch'
+                         * due to lack of CORS preflight support for keepalive in older browser engines.
+                         * If keepalive was active and threw a TypeError, fall back to a standard fetch without keepalive.
+                         */
+                        if (fetchOptions.keepalive && fetchErr instanceof TypeError) {
+                            log.warn(`Fetch with keepalive failed (${fetchErr.message}); retrying without keepalive...`);
+                            delete fetchOptions.keepalive;
+                            return await fetch(url, fetchOptions);
+                        }
+                        throw fetchErr;
                     }
-                    response = await fetch(url, fetchOptions);
+                };
+
+                // On older Smart TV platforms (such as Tizen 4.0 running Chromium 56 or webOS 3.x/4.x),
+                // native window.fetch does not recognize AbortSignal (only added in Chrome 66+).
+                // Polyfilled AbortControllers dispatch events, but native fetch never aborts.
+                // We wrap the request in Promise.race with an explicit timeout promise so that
+                // stalled network requests or connection pool bottlenecks abort cleanly on time
+                // instead of hanging the main thread for 60 to 120 seconds.
+                if (timeout) {
+                    const timeoutPromise = new Promise((_, reject) => {
+                        timeoutId = setTimeout(() => {
+                            try {
+                                controller.abort();
+                            } catch (_) {}
+                            const timeoutErr = new Error(`Connection timed out after ${timeout / 1000}s`);
+                            timeoutErr.name = 'AbortError';
+                            reject(timeoutErr);
+                        }, timeout);
+                    });
+                    response = await Promise.race([executeFetch(), timeoutPromise]);
                 } else {
-                    throw fetchErr;
+                    response = await executeFetch();
+                }
+            } finally {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
                 }
             }
-            if (timeoutId) clearTimeout(timeoutId);
 
             // Handle 304 Not Modified — return cached response body
             if (response.status === 304 && etagEntry) {
@@ -1341,7 +1366,7 @@ export class ApiClient {
                     parentIds: parentIds.join(','),
                     ...params
                 },
-                { warnOnError: true }
+                { warnOnError: true, timeout: 6000 }
             );
         } catch (e) {
             return null;
@@ -1366,7 +1391,7 @@ export class ApiClient {
                 {
                     parentIds: parentIds.join(',')
                 },
-                { warnOnError: true }
+                { warnOnError: true, timeout: 6000 }
             );
         } catch (e) {
             return null;

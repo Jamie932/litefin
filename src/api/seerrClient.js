@@ -98,7 +98,13 @@ export class SeerrClient {
             }
 
             try {
-                const payload = await api.get(`${API_ROOT}/Status`, {}, { silent: true, warnOnError: true });
+                // Bound the Seerr status probe to 5 seconds so an unresponsive or sleeping
+                // upstream Seerr instance fails fast instead of blocking navigation for 30s
+                const payload = await api.get(
+                    `${API_ROOT}/Status`,
+                    {},
+                    { silent: true, warnOnError: true, timeout: 5000 }
+                );
                 this._status = {
                     configured: !!payload?.configured,
                     available: !!payload?.available

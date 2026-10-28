@@ -5394,6 +5394,9 @@ class DetailsPage extends Page {
         });
     }
 
+    /**
+     * Start a shuffled playback. App.js keeps shuffle on only for plays that carry `isShufflePlay`.
+     */
     _shufflePlay() {
         playQueue.setShuffleMode(true);
         this._play({ isShufflePlay: true });

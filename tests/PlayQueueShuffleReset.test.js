@@ -104,5 +104,5 @@ test('player:play handler resets shuffle unless the request is a shuffle play', 
     assert.match(app, /if \(!isShufflePlay\) playQueue\.setShuffleMode\(false\);/);
 
     const details = await readFile(new URL('../src/pages/DetailsPage.js', import.meta.url), 'utf8');
-    assert.match(details, /ghostMode,\s*\n\s*isShufflePlay\s*\n\s*\}\);\s*\n\s*\}\s*\n\s*\n\s*_shufflePlay\(\)/);
+    assert.match(details, /ghostMode,\s*\n\s*isShufflePlay\s*\n\s*\}\);\s*\n\s*\}/);
 });

@@ -1316,40 +1316,32 @@ export function buildJellyfinProfile(options = {}) {
     }
 
     // -------------------------------------------------------------------------
-    // Dolby Vision MKV — Force Remux on WebOS < 25
+    // Dolby Vision in MKV Container Handling
     // -------------------------------------------------------------------------
-    // WebOS < 25 cannot reliably direct-play Dolby Vision content wrapped in an
-    // MKV container, regardless of the video codec (HEVC, H.264, etc.). DirectPlay
-    // of DOVI MKVs causes the native player to stall and crash due to the way the
-    // raw MKV byte stream is fed to the hardware decoder over HTTP.
+    // DO NOT add a CodecProfile scoped to Container: 'mkv' with negative
+    // conditions on VideoRangeType (e.g. NotEquals DOVI...).
     //
-    // The correct fix: add a CodecProfile scoped to Container:'mkv' and to the
-    // HEVC/H.264 codecs (AV1 is excluded, see below). The NotEquals
-    // conditions tell the Jellyfin server "DOVI is not supported for direct-play in
-    // this container" — causing it to immediately fall back to an fMP4 HLS Remux,
-    // which packages the identical stream into segments the TV handles flawlessly.
+    // WHY THIS CAUSES COMPLETE PLAYBACK FAILURE:
+    // 1. Jellyfin's StreamBuilder evaluates CodecProfiles against the source file's
+    //    container when determining DirectPlay compatibility.
+    // 2. When a condition like NotEquals VideoRangeType DOVI... fails on an MKV file,
+    //    StreamBuilder records TranscodeReasons=VideoRangeTypeNotSupported.
+    // 3. In StreamBuilder.cs, DirectStreamReasons only masks ContainerNotSupported,
+    //    AudioReasons, and VideoCodecTagNotSupported — it does NOT mask VideoRangeTypeNotSupported.
+    //    Consequently, SupportsDirectStream evaluates to false alongside SupportsDirectPlay.
+    // 4. When falling back to the transcoding pipeline, the server interprets
+    //    VideoRangeTypeNotSupported as a fundamental hardware incompatibility with
+    //    the video stream's color range. Instead of copying the video stream (remux),
+    //    FFmpeg initiates a full 4K HEVC re-encode tone-mapped down to SDR.
+    // 5. This heavy transcode chokes low-power servers and causes the native player
+    //    on webOS TVs to freeze after 20-30 seconds with washed-out SDR picture.
     //
-    // WebOS >= 25 handles DOVI MKV natively, so we skip this block for those devices.
-    //
-    // AV1 (DoVi profile 10) is left out: the HLS transcoding profiles carry only
-    // h264/hevc, so the "remux" would turn into a full software re-encode of the
-    // video. A raw-src DirectPlay of AV1 DoVi MKV plays on its HDR10 base layer
-    // (verified on webOS 6, LG UP80), as long as no dvh1 hint is attached.
-    if (enableDolbyVision && caps.webosVersion < 25) {
-        codecProfiles.push({
-            Type: 'Video',
-            // HEVC (DoVi profiles 5/7/8) and H.264 (profile 9); not AV1 (profile 10).
-            Codec: 'hevc,h264',
-            Container: 'mkv',
-            Conditions: [
-                { Condition: 'NotEquals', Property: 'VideoRangeType', Value: 'DOVI', IsRequired: false },
-                { Condition: 'NotEquals', Property: 'VideoRangeType', Value: 'DOVIWithHDR10', IsRequired: false },
-                { Condition: 'NotEquals', Property: 'VideoRangeType', Value: 'DOVIWithHLG', IsRequired: false },
-                { Condition: 'NotEquals', Property: 'VideoRangeType', Value: 'DOVIWithSDR', IsRequired: false },
-                { Condition: 'NotEquals', Property: 'VideoRangeType', Value: 'DOVIWithHDR10Plus', IsRequired: false }
-            ]
-        });
-    }
+    // NATIVE DIRECT PLAY BEHAVIOR:
+    // For Dolby Vision Profile 8.1/8.2/8.4 and Profile 7, the bitstream incorporates
+    // a standard HDR10 base layer. WebOS TVs direct-play these MKVs over HTTP via
+    // WebOSPlayer._playNativeDirect() without crashing, playing the HDR10 base layer
+    // (or Dolby Vision) smoothly at full quality with 0% server overhead.
+    // -------------------------------------------------------------------------
 
     // -------------------------------------------------------------------------
     // DirectStreamProfiles — raw container output for the DirectStream path.

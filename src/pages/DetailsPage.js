@@ -5389,7 +5389,8 @@ class DetailsPage extends Page {
             audioStreamIndex: this._selectedAudioIndex,
             subtitleStreamIndex: this._selectedSubtitleIndex,
             backdropUrl,
-            ghostMode
+            ghostMode,
+            isShufflePlay
         });
     }
 

@@ -122,23 +122,21 @@ export const PHYSICS_SETTLE_DISTANCE_PX = 0.5;
 /**
  * Terminal glide band for engines with exponential tails (spring, chase,
  * fling). Once the remaining distance enters this zone the loop hands the
- * closing phase over to a monotone cubic-Hermite ease (see the glide block
- * in ScrollController._runSpringLoop) that honors the exact entry velocity
- * and reaches the target with visible average closing speed at touchdown.
- * Without it a critically damped spring spends the last third of the
- * animation below ~1px/frame — visually "done", then creeping for hundreds
- * of ms (the post-scroll "hitch in two parts" on slow panels).
+ * closing phase over to a constant-deceleration ease-out that reaches the
+ * target in 2·rem/v time, keeping visible speed in the perceptible band
+ * until touchdown. Without it a critically damped spring spends the last
+ * third of the animation below ~1px/frame — visually "done", then creeping
+ * for hundreds of ms (the post-scroll "hitch in two parts" on slow panels).
  */
 export const GLIDE_ZONE_FRACTION = 0.25;
 export const GLIDE_ZONE_MAX_PX = 90;
-/** Fallback entry speed + average closing-speed floor for the glide
- * (0.5px/ms = 8px per 60Hz frame). */
+/** Average closing-speed floor for the glide (0.5px/ms = 8px per 60Hz frame). */
 export const GLIDE_FALLBACK_SPEED_PX_MS = 0.5;
-/** Maximum glide duration bound derived in the loop (alpha stays ≤ 3). */
-export const GLIDE_ALPHA_MAX = 3;
+/** Glide entry speed cap — decelerate into the glide instead of inheriting
+ * a fast peak, so the handover never reads as a jerk. */
+export const GLIDE_ENTRY_SPEED_CAP_PX_MS = 2;
 /** Minimum glide duration (ms) — keeps the closing phase multi-frame even
- * when the handover happens close to the target (throttled/skipped frames;
- * bounded above by the 3·rem/v natural so alpha stays ≤ 3 = monotone). */
+ * when the handover happens close to the target (throttled/skipped frames). */
 export const GLIDE_MIN_DURATION_MS = 110;
 
 /**
